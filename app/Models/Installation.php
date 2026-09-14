@@ -1,0 +1,4 @@
+<?php
+namespace App\Models;
+use App\Enums\InstallationStatus; use Illuminate\Database\Eloquent\Model; use Illuminate\Database\Eloquent\SoftDeletes; use Illuminate\Database\Eloquent\Concerns\HasUuids;
+class Installation extends Model { use SoftDeletes,HasUuids; protected $guarded=[]; protected $hidden=['installation_token_hash','machine_id_hash','product_uuid_hash','board_serial_hash','system_serial_hash','disk_serial_hash']; public function uniqueIds(){return ['uuid'];} protected function casts():array{return ['status'=>InstallationStatus::class,'health'=>'array','first_seen_at'=>'datetime','last_seen_at'=>'datetime','activated_at'=>'datetime','locked_at'=>'datetime'];} public function license(){return $this->belongsTo(License::class);} public function release(){return $this->belongsTo(Release::class);} public function events(){return $this->hasMany(InstallationEvent::class);} }

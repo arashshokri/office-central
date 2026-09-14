@@ -1,0 +1,4 @@
+<?php
+namespace App\Http\Controllers\Api\V1;
+use App\Http\Controllers\Controller; use App\Services\{ActivationService,ApiResponse,LeaseService,LicenseStateService}; use Illuminate\Http\Request;
+class LeaseController extends Controller { public function __invoke(Request $request,ActivationService $activation,LicenseStateService $states,LeaseService $leases){$data=$request->validate(['hardware'=>'required|array']);$installation=$request->attributes->get('installation');try{$mismatch=$activation->verifyFingerprint($installation,$data['hardware'],$request->ip(),$request->attributes->get('request_id'));}catch(\InvalidArgumentException $e){return ApiResponse::error('LICENSE_INVALID',$e->getMessage(),422);}if($mismatch)return ApiResponse::error(...$mismatch);if($error=$states->validateInstallation($installation))return ApiResponse::error(...$error);return ApiResponse::ok($leases->issue($installation));} }

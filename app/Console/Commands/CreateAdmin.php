@@ -1,0 +1,4 @@
+<?php
+namespace App\Console\Commands;
+use App\Models\User; use Illuminate\Console\Command; use Illuminate\Support\Facades\Hash;
+class CreateAdmin extends Command { protected $signature='office:create-admin {--email=} {--name=} {--password=} {--locale=fa}'; protected $description='Create or update the initial super administrator'; public function handle():int{$email=$this->option('email')?:$this->ask('Email');$name=$this->option('name')?:$this->ask('Name','Administrator');$password=$this->option('password')?:$this->secret('Password');if(!$password||strlen($password)<12){$this->error('Password must be at least 12 characters.');return self::FAILURE;}User::updateOrCreate(['email'=>$email],['name'=>$name,'password'=>Hash::make($password),'role'=>'super_admin','locale'=>$this->option('locale'),'active'=>true]);$this->info('Super administrator is ready.');return self::SUCCESS;} }

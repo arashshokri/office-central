@@ -1,0 +1,7 @@
+{
+    email {$ACME_EMAIL}
+}
+{$CENTRAL_FQDN} {
+    encode zstd gzip
+    reverse_proxy nginx:80
+}

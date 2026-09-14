@@ -1,0 +1,3 @@
+<?php
+use App\Http\Controllers\Api\V1\{ActivationController,HeartbeatController,LeaseController,PackageController}; use Illuminate\Support\Facades\Route;
+Route::prefix('v1')->middleware(['agent.https','throttle:agent'])->group(function(){Route::post('/licenses/activate',ActivationController::class);Route::get('/packages/download/{token}',[PackageController::class,'download'])->middleware('throttle:downloads');Route::middleware(['installation.auth','replay'])->group(function(){Route::post('/installations/heartbeat',HeartbeatController::class);Route::post('/installations/lease',LeaseController::class);Route::post('/packages/token',[PackageController::class,'token']);});});

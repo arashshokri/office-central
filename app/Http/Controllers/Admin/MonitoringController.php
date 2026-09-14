@@ -1,0 +1,4 @@
+<?php
+namespace App\Http\Controllers\Admin;
+use App\Http\Controllers\Controller; use App\Models\{Installation,SecurityEvent,AuditLog};
+class MonitoringController extends Controller { public function installations(){return view('admin.resource',['title'=>__('ui.installations'),'columns'=>['uuid','hostname','status','application_version','last_seen_at'],'rows'=>Installation::latest()->paginate(20)]);} public function security(){return view('admin.resource',['title'=>__('ui.security_events'),'columns'=>['type','request_id','ip_address','occurred_at'],'rows'=>SecurityEvent::latest('occurred_at')->paginate(20)]);} public function audit(){return view('admin.resource',['title'=>__('ui.audit_logs'),'columns'=>['action','subject_type','request_id','occurred_at'],'rows'=>AuditLog::latest('occurred_at')->paginate(20)]);} }

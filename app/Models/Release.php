@@ -1,0 +1,4 @@
+<?php
+namespace App\Models;
+use App\Enums\{ReleaseChannel,ReleaseStatus,PackageSource}; use Illuminate\Database\Eloquent\Model; use Illuminate\Database\Eloquent\SoftDeletes; use Illuminate\Database\Eloquent\Concerns\HasUuids;
+class Release extends Model { use SoftDeletes,HasUuids; protected $guarded=[]; public function uniqueIds(){return ['uuid'];} protected function casts():array{return ['channel'=>ReleaseChannel::class,'status'=>ReleaseStatus::class,'source_type'=>PackageSource::class,'published_at'=>'datetime'];} protected static function booted():void{static::updating(function(self $release){if($release->getRawOriginal('status')==='published'&&$release->isDirty(['package_filename','package_path','package_size','package_sha256']))throw new \DomainException('Published release packages are immutable.');});} public function product(){return $this->belongsTo(Product::class);} }

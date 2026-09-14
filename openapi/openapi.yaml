@@ -1,0 +1,28 @@
+openapi: 3.1.0
+info: {title: Office Central Agent API, version: 1.0.0, description: "Transport failures are non-authoritative. Only structured 4xx security codes may change cached license state."}
+servers: [{url: "https://license.example.com/api/v1"}]
+paths:
+  /licenses/activate:
+    post:
+      summary: Bind a license to stable hardware and issue the initial signed lease
+      operationId: activateLicense
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ActivationRequest'}}}}
+      responses: {'201': {description: Activated}, '403': {$ref: '#/components/responses/AuthoritativeFailure'}, '409': {$ref: '#/components/responses/AuthoritativeFailure'}}
+  /installations/heartbeat:
+    post: {summary: Report health and prove the current hardware binding, security: [{installationToken: []}], parameters: [{$ref: '#/components/parameters/Nonce'}, {$ref: '#/components/parameters/Timestamp'}], responses: {'200': {description: Accepted}, '403': {$ref: '#/components/responses/AuthoritativeFailure'}}}
+  /installations/lease:
+    post: {summary: Refresh the Ed25519 signed offline lease, security: [{installationToken: []}], parameters: [{$ref: '#/components/parameters/Nonce'}, {$ref: '#/components/parameters/Timestamp'}], responses: {'200': {description: Signed lease}, '403': {$ref: '#/components/responses/AuthoritativeFailure'}}}
+  /packages/token:
+    post: {summary: Issue a short-lived one-use package URL, security: [{installationToken: []}], parameters: [{$ref: '#/components/parameters/Nonce'}, {$ref: '#/components/parameters/Timestamp'}], responses: {'200': {description: Token issued}}}
+  /packages/download/{token}:
+    get: {summary: Download a private package once, parameters: [{name: token, in: path, required: true, schema: {type: string}}], responses: {'200': {description: ZIP payload}, '404': {description: Invalid or expired token}}}
+components:
+  securitySchemes: {installationToken: {type: http, scheme: bearer}}
+  parameters:
+    Nonce: {name: X-Request-Nonce, in: header, required: true, schema: {type: string, maxLength: 128}}
+    Timestamp: {name: X-Request-Timestamp, in: header, required: true, schema: {type: integer}}
+  responses:
+    AuthoritativeFailure: {description: Explicit state response, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  schemas:
+    ActivationRequest: {type: object, required: [license_key, hostname, hardware], properties: {license_key: {type: string}, hostname: {type: string}, fingerprint_version: {type: integer, enum: [1]}, hardware: {type: object, minProperties: 2}}}
+    Error: {type: object, required: [success, code, message, request_id], properties: {success: {const: false}, code: {type: string, enum: [LICENSE_NOT_FOUND, LICENSE_INVALID, LICENSE_EXPIRED, LICENSE_SUSPENDED, LICENSE_REVOKED, LICENSE_INSTALLATION_LIMIT, LICENSE_HARDWARE_MISMATCH, INSTALLATION_NOT_FOUND, INSTALLATION_LOCKED, RELEASE_NOT_AVAILABLE, PACKAGE_NOT_FOUND, INVALID_SIGNATURE, REPLAY_DETECTED, RATE_LIMITED]}, message: {type: string}, request_id: {type: string}}}

@@ -1,0 +1,4 @@
+<?php
+namespace App\Services;
+use App\Enums\{LicenseStatus,InstallationStatus}; use App\Models\{License,Installation};
+final class LicenseStateService { public function validateLicense(License $license):?array { if($license->status===LicenseStatus::Revoked)return ['LICENSE_REVOKED','License has been revoked.',403]; if($license->status===LicenseStatus::Suspended)return ['LICENSE_SUSPENDED','License has been suspended.',403]; if($license->expires_at?->isPast()||$license->status===LicenseStatus::Expired)return ['LICENSE_EXPIRED','License has expired.',403]; return null; } public function validateInstallation(Installation $installation):?array { if($installation->status===InstallationStatus::Locked)return ['INSTALLATION_LOCKED','Installation is locked.',403]; return $this->validateLicense($installation->license); } }

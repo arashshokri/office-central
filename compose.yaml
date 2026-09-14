@@ -1,0 +1,48 @@
+name: office-central
+services:
+  app:
+    build: {context: ., dockerfile: docker/php/Dockerfile}
+    env_file: .env
+    restart: unless-stopped
+    volumes: [application_storage:/var/www/html/storage, package_data:/srv/office-central/packages]
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
+  nginx:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ["127.0.0.1:${INTERNAL_HTTP_PORT:-8080}:80"]
+    volumes: ["./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro", "./public:/var/www/html/public:ro"]
+    depends_on: [app]
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment: {CENTRAL_FQDN: "${CENTRAL_FQDN}", ACME_EMAIL: "${ACME_EMAIL}"}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: ["./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro", caddy_data:/data, caddy_config:/config]
+    depends_on: [nginx]
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment: {POSTGRES_DB: "${DB_DATABASE}", POSTGRES_USER: "${DB_USERNAME}", POSTGRES_PASSWORD: "${DB_PASSWORD}"}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"], interval: 10s, timeout: 5s, retries: 10}
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes: [redis_data:/data]
+    healthcheck: {test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"], interval: 10s, timeout: 5s, retries: 10}
+  queue-worker:
+    build: {context: ., dockerfile: docker/php/Dockerfile}
+    env_file: .env
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=120"]
+    volumes: [application_storage:/var/www/html/storage, package_data:/srv/office-central/packages]
+    depends_on: [app]
+  scheduler:
+    build: {context: ., dockerfile: docker/php/Dockerfile}
+    env_file: .env
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    volumes: [application_storage:/var/www/html/storage, package_data:/srv/office-central/packages]
+    depends_on: [app]
+volumes: {postgres_data: {}, redis_data: {}, package_data: {}, application_storage: {}, caddy_data: {}, caddy_config: {}}
