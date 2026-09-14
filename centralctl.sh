@@ -10,7 +10,7 @@ need_root(){ [[ ${EUID:-$(id -u)} -eq 0 ]] || die 'Run with sudo.'; }
 need(){ command -v "$1" >/dev/null || die "$1 is required."; }
 env_value(){ sed -n "s/^$1=//p" "$ROOT_DIR/.env" | tail -n1; }
 random_b64(){ openssl rand -base64 48 | tr -d '\n'; }
-usage(){ echo 'Usage: centralctl.sh install|start|stop|restart|status|logs|backup|restore <archive>|update <tag>|rollback [tag]|doctor'; }
+usage(){ echo 'Usage: centralctl.sh install|resume|start|stop|restart|status|logs|backup|restore <archive>|update <tag>|rollback [tag]|doctor'; }
 install_cmd(){
   need_root; need docker; need openssl; docker compose version >/dev/null
   local domain='' email='' public_ip='' tls='letsencrypt'
@@ -36,6 +36,17 @@ install_cmd(){
   echo "Nginx Proxy Manager UI is loopback-only on port ${NGINX_UI_PORT:-81}; use an SSH tunnel."
   echo "Create Proxy Host $domain -> nginx:80, enable Websockets, request SSL, Force SSL and HTTP/2."
 }
+resume_cmd(){
+  need_root; need docker; [[ -f "$ROOT_DIR/.env" ]] || die '.env does not exist; run install instead.'
+  "${COMPOSE[@]}" up -d --build
+  "${COMPOSE[@]}" exec -T app php artisan migrate --force
+  local email admin_password; email="$(env_value ACME_EMAIL)"; [[ -n "$email" ]] || read -rp 'Admin email: ' email
+  read -rsp 'Initial admin password (12+ characters): ' admin_password; echo
+  "${COMPOSE[@]}" exec -T app php artisan office:create-admin --email="$email" --name=Administrator --password="$admin_password"
+  "${COMPOSE[@]}" exec -T app php artisan optimize
+  "${COMPOSE[@]}" ps
+  curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health"; echo
+}
 backup_cmd(){
   need_root; mkdir -p "$BACKUP_DIR"; local stamp archive work; stamp="$(date -u +%Y%m%dT%H%M%SZ)"; archive="$BACKUP_DIR/office-central-$stamp.tar.gz"; work="$(mktemp -d)"; trap 'rm -rf -- "$work"' RETURN
   "${COMPOSE[@]}" exec -T postgres pg_dump -U "$(env_value DB_USERNAME)" -d "$(env_value DB_DATABASE)" -Fc > "$work/database.dump"; cp "$ROOT_DIR/.env" "$work/environment"
@@ -56,4 +67,4 @@ update_cmd(){
 rollback_cmd(){ need_root; local tag="${1:-$(cat "$ROOT_DIR/.previous-release" 2>/dev/null)}"; [[ -n "$tag" ]]||die 'No previous release recorded.'; git -C "$ROOT_DIR" checkout --detach "$tag"; "${COMPOSE[@]}" up -d --build; curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health" >/dev/null; }
 doctor_cmd(){ need docker; echo 'Office Central diagnostics'; "${COMPOSE[@]}" ps; docker info >/dev/null&&echo 'Docker: OK'; [[ -w "$ROOT_DIR/storage" ]]&&echo 'Storage: OK'||echo 'Storage: CHECK'; df -h "$ROOT_DIR"; if [[ -f "$ROOT_DIR/.env" ]]; then local domain; domain="$(env_value CENTRAL_FQDN)"; getent hosts "$domain"||true; curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health"||true; "${COMPOSE[@]}" exec -T app php artisan migrate:status||true; fi; }
 cmd="${1:-}"; shift || true
-case "$cmd" in install)install_cmd "$@";;start|stop|restart)need_root;"${COMPOSE[@]}" "$cmd";;status)"${COMPOSE[@]}" ps;;logs)"${COMPOSE[@]}" logs -f --tail=200;;backup)backup_cmd;;restore)restore_cmd "$@";;update)update_cmd "$@";;rollback)rollback_cmd "$@";;doctor)doctor_cmd;;*)usage;exit 1;;esac
+case "$cmd" in install)install_cmd "$@";;resume)resume_cmd;;start|stop|restart)need_root;"${COMPOSE[@]}" "$cmd";;status)"${COMPOSE[@]}" ps;;logs)"${COMPOSE[@]}" logs -f --tail=200;;backup)backup_cmd;;restore)restore_cmd "$@";;update)update_cmd "$@";;rollback)rollback_cmd "$@";;doctor)doctor_cmd;;*)usage;exit 1;;esac
