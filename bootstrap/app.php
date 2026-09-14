@@ -13,7 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->trustProxies(at: ['172.29.87.10', '172.29.87.20'], headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_HOST | Request::HEADER_X_FORWARDED_PORT | Request::HEADER_X_FORWARDED_PROTO);
+        $middleware->trustProxies(at: ['172.29.87.20'], headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_HOST | Request::HEADER_X_FORWARDED_PORT | Request::HEADER_X_FORWARDED_PROTO);
         $middleware->append(\App\Http\Middleware\RequestId::class);
         $middleware->web(append: [\App\Http\Middleware\SetLocale::class]);
         $middleware->alias(['agent.https'=>\App\Http\Middleware\RequireHttpsForAgent::class,'installation.auth'=>\App\Http\Middleware\AuthenticateInstallation::class,'replay'=>\App\Http\Middleware\PreventReplay::class,'role'=>\App\Http\Middleware\RequireRole::class]);

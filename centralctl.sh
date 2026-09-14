@@ -33,8 +33,8 @@ install_cmd(){
   local admin_password; read -rsp 'Initial admin password (12+ characters): ' admin_password; echo
   "${COMPOSE[@]}" exec -T app php artisan office:create-admin --email="$email" --name=Administrator --password="$admin_password"; "${COMPOSE[@]}" exec -T app php artisan optimize
   echo "Installed internally: http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}"
-  echo "Nginx Proxy Manager UI is loopback-only on port ${NGINX_UI_PORT:-81}; use an SSH tunnel."
-  echo "Create Proxy Host $domain -> nginx:80, enable Websockets, request SSL, Force SSL and HTTP/2."
+  echo "Configure the existing host reverse proxy: $domain -> http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}."
+  echo "Preserve Host and forward X-Forwarded-For, X-Forwarded-Host and X-Forwarded-Proto."
 }
 resume_cmd(){
   need_root; need docker; [[ -f "$ROOT_DIR/.env" ]] || die '.env does not exist; run install instead.'

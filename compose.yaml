@@ -14,15 +14,6 @@ services:
     depends_on: [app]
     networks:
       default: {ipv4_address: 172.29.87.20}
-  proxy-manager:
-    image: jc21/nginx-proxy-manager:2.12.6
-    restart: unless-stopped
-    environment: {DISABLE_IPV6: "true"}
-    ports: ["80:80", "443:443", "127.0.0.1:${NGINX_UI_PORT:-81}:81"]
-    volumes: [proxy_manager_data:/data, proxy_manager_letsencrypt:/etc/letsencrypt]
-    depends_on: [nginx]
-    networks:
-      default: {ipv4_address: 172.29.87.10}
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -50,7 +41,7 @@ services:
     command: ["php", "artisan", "schedule:work"]
     volumes: [application_storage:/var/www/html/storage, package_data:/srv/office-central/packages]
     depends_on: [app]
-volumes: {postgres_data: {}, redis_data: {}, package_data: {}, application_storage: {}, proxy_manager_data: {}, proxy_manager_letsencrypt: {}}
+volumes: {postgres_data: {}, redis_data: {}, package_data: {}, application_storage: {}}
 networks:
   default:
     ipam:
