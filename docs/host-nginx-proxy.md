@@ -1,6 +1,6 @@
 # Existing host Nginx proxy
 
-Office Central does not bind public ports 80 or 443. Its application Nginx is published only on server loopback at `127.0.0.1:8787`, so it can coexist with an existing Nginx, Nginx UI, CDN connector, or reverse-proxy service on the host.
+Office Central does not bind ports 80 or 443. Its application Nginx is published at `0.0.0.0:8787` by default so a host or containerized Nginx UI can reach it. Use the host firewall to allow port 8787 only from the reverse proxy or trusted management network.
 
 Create a proxy entry for `my.ponet.ir` with upstream `http://127.0.0.1:8787`. Enable WebSocket support if the UI offers it, preserve the original Host header, and forward the client/protocol headers. A native Nginx server block uses:
 
@@ -30,4 +30,4 @@ server {
 }
 ```
 
-Issue and renew TLS in the existing host proxy/UI. Keep port 8787 closed in the public firewall; test it locally with `curl http://127.0.0.1:8787/health`.
+Issue and renew TLS in the existing host proxy/UI. Block untrusted public traffic to port 8787; test it locally with `curl http://127.0.0.1:8787/health`. Set `INTERNAL_BIND_ADDRESS=127.0.0.1` when the proxy runs directly on the host and external binding is unnecessary.

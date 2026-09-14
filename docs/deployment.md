@@ -1,6 +1,6 @@
 # Production deployment
 
-Use Debian 12 or Ubuntu 24.04 with Docker Engine, Compose v2, Git, OpenSSL, at least 2 GB RAM, and sufficient disk for PostgreSQL plus immutable packages. The existing host reverse proxy owns public ports 80 and 443. Office Central binds only `127.0.0.1:8787`. Create the DNS `A`/`AAAA` records before installation.
+Use Debian 12 or Ubuntu 24.04 with Docker Engine, Compose v2, Git, OpenSSL, at least 2 GB RAM, and sufficient disk for PostgreSQL plus immutable packages. The existing host reverse proxy owns public ports 80 and 443. Office Central binds `0.0.0.0:8787` by default; restrict that port to the reverse proxy with the host firewall. Create the DNS `A`/`AAAA` records before installation.
 
 ```bash
 git clone <private-central-repository> office-central
