@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
+trap 'code=$?; printf "ERROR: command failed at line %s (exit %s).\n" "$LINENO" "$code" >&2; exit "$code"' ERR
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}"
 COMPOSE=(docker compose --project-directory "$ROOT_DIR" -f "$ROOT_DIR/compose.yaml")
@@ -19,10 +20,15 @@ install_cmd(){
   [[ -n "$email" ]] || read -rp 'Admin email: ' email; [[ -n "$public_ip" ]] || read -rp 'Server public IP: ' public_ip
   local resolved; resolved="$(getent ahostsv4 "$domain" 2>/dev/null|awk 'NR==1{print $1}')" || true
   [[ "$resolved" == "$public_ip" ]] || printf 'WARNING: %s resolves to %s; expected %s. Fix DNS before TLS.\n' "$domain" "${resolved:-nothing}" "$public_ip"
-  cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
-  sed -i "s|^APP_URL=.*|APP_URL=https://$domain|;s|^CENTRAL_PUBLIC_URL=.*|CENTRAL_PUBLIC_URL=https://$domain|;s|^CENTRAL_FQDN=.*|CENTRAL_FQDN=$domain|;s|^ACME_EMAIL=.*|ACME_EMAIL=$email|;s|^DB_PASSWORD=.*|DB_PASSWORD=$(random_b64)|;s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$(random_b64)|" "$ROOT_DIR/.env"
-  local appkey signing; appkey="base64:$(openssl rand -base64 32)"; signing="$(docker run --rm php:8.3-cli php -r '\$p=sodium_crypto_sign_keypair();echo sodium_bin2base64(sodium_crypto_sign_secretkey(\$p),7)," ",sodium_bin2base64(sodium_crypto_sign_publickey(\$p),7);')"
-  sed -i "s|^APP_KEY=.*|APP_KEY=$appkey|;s|^CENTRAL_SIGNING_PRIVATE_KEY=.*|CENTRAL_SIGNING_PRIVATE_KEY=${signing% *}|;s|^CENTRAL_SIGNING_PUBLIC_KEY=.*|CENTRAL_SIGNING_PUBLIC_KEY=${signing#* }|;s|^TLS_MODE=.*|TLS_MODE=$tls|" "$ROOT_DIR/.env"
+  local appkey signing db_password redis_password env_tmp
+  appkey="base64:$(openssl rand -base64 32)"
+  db_password="$(random_b64)"; redis_password="$(random_b64)"
+  signing="$(docker run --rm php:8.3-cli php -r '$p=sodium_crypto_sign_keypair();echo sodium_bin2base64(sodium_crypto_sign_secretkey($p),7)," ",sodium_bin2base64(sodium_crypto_sign_publickey($p),7);')"
+  [[ "$signing" == *' '* ]] || die 'Ed25519 key generation failed.'
+  env_tmp="$(mktemp "$ROOT_DIR/.env.installing.XXXXXX")"
+  cp "$ROOT_DIR/.env.example" "$env_tmp"
+  sed -i "s|^APP_URL=.*|APP_URL=https://$domain|;s|^CENTRAL_PUBLIC_URL=.*|CENTRAL_PUBLIC_URL=https://$domain|;s|^CENTRAL_FQDN=.*|CENTRAL_FQDN=$domain|;s|^ACME_EMAIL=.*|ACME_EMAIL=$email|;s|^DB_PASSWORD=.*|DB_PASSWORD=$db_password|;s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$redis_password|;s|^APP_KEY=.*|APP_KEY=$appkey|;s|^CENTRAL_SIGNING_PRIVATE_KEY=.*|CENTRAL_SIGNING_PRIVATE_KEY=${signing% *}|;s|^CENTRAL_SIGNING_PUBLIC_KEY=.*|CENTRAL_SIGNING_PUBLIC_KEY=${signing#* }|;s|^TLS_MODE=.*|TLS_MODE=$tls|" "$env_tmp"
+  mv "$env_tmp" "$ROOT_DIR/.env"
   "${COMPOSE[@]}" up -d --build; "${COMPOSE[@]}" exec -T app php artisan migrate --force
   local admin_password; read -rsp 'Initial admin password (12+ characters): ' admin_password; echo
   "${COMPOSE[@]}" exec -T app php artisan office:create-admin --email="$email" --name=Administrator --password="$admin_password"; "${COMPOSE[@]}" exec -T app php artisan optimize
