@@ -41,7 +41,7 @@ Every state contains a monotonic revision, access decision, optional customer-fa
 
 ## Operations and testing
 
-Use `centralctl.sh` for install, lifecycle, status, logs, doctor, backup, restore, tagged update, and rollback. The application Nginx listens on configurable port 8787 (`0.0.0.0` by default), leaving ports 80/443 for the server's existing Nginx UI or reverse proxy. Restrict public access to 8787 with the host firewall. See [host proxy setup](docs/host-nginx-proxy.md), [commands](docs/centralctl.md), [backup/restore](docs/backup-restore.md), and [updates](docs/update-rollback.md).
+Use `centralctl.sh` for install, lifecycle, status, logs, doctor, backup, restore, tagged update, and rollback. The application Nginx listens directly on port 80. See [commands](docs/centralctl.md), [backup/restore](docs/backup-restore.md), and [updates](docs/update-rollback.md).
 
 ```bash
 php artisan key:generate

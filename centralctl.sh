@@ -32,8 +32,8 @@ install_cmd(){
   "${COMPOSE[@]}" up -d --build; "${COMPOSE[@]}" exec -T app php artisan migrate --force
   local admin_password; read -rsp 'Initial admin password (12+ characters): ' admin_password; echo
   "${COMPOSE[@]}" exec -T app php artisan office:create-admin --email="$email" --name=Administrator --password="$admin_password"; "${COMPOSE[@]}" exec -T app php artisan optimize
-  echo "Installed internally: http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}"
-  echo "Configure the existing host reverse proxy: $domain -> http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}."
+  echo "Installed on: http://127.0.0.1:80"
+  echo "Point $domain to this server; the web service listens directly on port 80."
   echo "Preserve Host and forward X-Forwarded-For, X-Forwarded-Host and X-Forwarded-Proto."
 }
 resume_cmd(){
@@ -45,7 +45,7 @@ resume_cmd(){
   "${COMPOSE[@]}" exec -T app php artisan office:create-admin --email="$email" --name=Administrator --password="$admin_password"
   "${COMPOSE[@]}" exec -T app php artisan optimize
   "${COMPOSE[@]}" ps
-  curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health"; echo
+  curl -fsS "http://127.0.0.1:80/health"; echo
 }
 backup_cmd(){
   need_root; mkdir -p "$BACKUP_DIR"; local stamp archive work; stamp="$(date -u +%Y%m%dT%H%M%SZ)"; archive="$BACKUP_DIR/office-central-$stamp.tar.gz"; work="$(mktemp -d)"; trap 'rm -rf -- "$work"' RETURN
@@ -64,9 +64,9 @@ update_cmd(){
   git -C "$ROOT_DIR" fetch --tags --prune; git -C "$ROOT_DIR" rev-parse -q --verify "refs/tags/$tag" >/dev/null || die 'Tag does not exist.'
   local expected_tag; expected_tag="v$(git -C "$ROOT_DIR" show "$tag:VERSION" | tr -d '[:space:]')"; [[ "$tag" == "$expected_tag" ]] || die "Release tag $tag does not match VERSION ${expected_tag#v}."
   backup_cmd; git -C "$ROOT_DIR" describe --tags --exact-match HEAD 2>/dev/null > "$ROOT_DIR/.previous-release" || true; git -C "$ROOT_DIR" checkout --detach "$tag"
-  if ! "${COMPOSE[@]}" up -d --build || ! "${COMPOSE[@]}" exec -T app php artisan migrate --force || ! curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health" >/dev/null; then echo 'Update failed; inspect migrations before rollback.'; exit 1; fi; echo "$tag" > "$ROOT_DIR/.deployed-version"
+  if ! "${COMPOSE[@]}" up -d --build || ! "${COMPOSE[@]}" exec -T app php artisan migrate --force || ! curl -fsS "http://127.0.0.1:80/health" >/dev/null; then echo 'Update failed; inspect migrations before rollback.'; exit 1; fi; echo "$tag" > "$ROOT_DIR/.deployed-version"
 }
-rollback_cmd(){ need_root; local tag="${1:-$(cat "$ROOT_DIR/.previous-release" 2>/dev/null)}"; [[ -n "$tag" ]]||die 'No previous release recorded.'; git -C "$ROOT_DIR" checkout --detach "$tag"; "${COMPOSE[@]}" up -d --build; curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health" >/dev/null; }
-doctor_cmd(){ need docker; echo 'Office Central diagnostics'; "${COMPOSE[@]}" ps; docker info >/dev/null&&echo 'Docker: OK'; [[ -w "$ROOT_DIR/storage" ]]&&echo 'Storage: OK'||echo 'Storage: CHECK'; df -h "$ROOT_DIR"; if [[ -f "$ROOT_DIR/.env" ]]; then local domain; domain="$(env_value CENTRAL_FQDN)"; getent hosts "$domain"||true; curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health"||true; "${COMPOSE[@]}" exec -T app php artisan migrate:status||true; fi; }
+rollback_cmd(){ need_root; local tag="${1:-$(cat "$ROOT_DIR/.previous-release" 2>/dev/null)}"; [[ -n "$tag" ]]||die 'No previous release recorded.'; git -C "$ROOT_DIR" checkout --detach "$tag"; "${COMPOSE[@]}" up -d --build; curl -fsS "http://127.0.0.1:80/health" >/dev/null; }
+doctor_cmd(){ need docker; echo 'Office Central diagnostics'; "${COMPOSE[@]}" ps; docker info >/dev/null&&echo 'Docker: OK'; [[ -w "$ROOT_DIR/storage" ]]&&echo 'Storage: OK'||echo 'Storage: CHECK'; df -h "$ROOT_DIR"; if [[ -f "$ROOT_DIR/.env" ]]; then local domain; domain="$(env_value CENTRAL_FQDN)"; getent hosts "$domain"||true; curl -fsS "http://127.0.0.1:80/health"||true; "${COMPOSE[@]}" exec -T app php artisan migrate:status||true; fi; }
 cmd="${1:-}"; shift || true
 case "$cmd" in install)install_cmd "$@";;resume)resume_cmd;;start|stop|restart)need_root;"${COMPOSE[@]}" "$cmd";;status)"${COMPOSE[@]}" ps;;logs)"${COMPOSE[@]}" logs -f --tail=200;;backup)backup_cmd;;restore)restore_cmd "$@";;update)update_cmd "$@";;rollback)rollback_cmd "$@";;doctor)doctor_cmd;;*)usage;exit 1;;esac
