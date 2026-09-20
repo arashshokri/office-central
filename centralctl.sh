@@ -4,7 +4,7 @@ umask 077
 trap 'code=$?; printf "ERROR: command failed at line %s (exit %s).\n" "$LINENO" "$code" >&2; exit "$code"' ERR
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}"
-COMPOSE=(docker compose --project-directory "$ROOT_DIR" -f "$ROOT_DIR/compose.yaml")
+COMPOSE=(docker compose --project-name office-central --project-directory "$ROOT_DIR" -f "$ROOT_DIR/docker-compose.yml")
 die(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need_root(){ [[ ${EUID:-$(id -u)} -eq 0 ]] || die 'Run with sudo.'; }
 need(){ command -v "$1" >/dev/null || die "$1 is required."; }

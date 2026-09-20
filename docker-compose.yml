@@ -1,4 +1,5 @@
-name: office-central
+version: "3.8"
+
 services:
   web:
     image: nginx:1.28-alpine
