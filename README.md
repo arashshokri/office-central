@@ -4,7 +4,7 @@ Office Central is a production-oriented Laravel 12 control plane for products, c
 
 ## Architecture
 
-Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. PostgreSQL is the source of truth, Redis backs cache, queues and rate limits through the pure-PHP Predis client, Nginx serves the application, package ZIPs live on private persistent storage, and Ed25519 signs access states independently of TLS. Compose runs `app`, `nginx`, `postgres`, `redis`, `queue-worker`, and `scheduler` with persistent volumes.
+Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. PostgreSQL is the source of truth, Redis backs cache, queues and rate limits through the pure-PHP Predis client, Nginx serves the application, package ZIPs live on private persistent storage, and Ed25519 signs access states independently of TLS. Compose runs `web`, `app`, `postgres`, `redis`, `queue-worker`, and `scheduler` with persistent volumes.
 
 ## Quick start
 
