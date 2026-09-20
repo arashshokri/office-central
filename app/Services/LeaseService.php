@@ -1,4 +1,16 @@
 <?php
+
 namespace App\Services;
-use App\Models\{Installation,LicenseLease,InstallationEvent}; use Illuminate\Support\Str;
-final class LeaseService { public function __construct(private SigningService $signer){} public function issue(Installation $installation):array { $now=now(); $expires=$now->copy()->addSeconds(config('office.offline_grace_seconds')); $payload=['lease_id'=>(string)Str::uuid(),'installation_id'=>$installation->uuid,'license_status'=>$installation->license->status->value,'installation_status'=>$installation->status->value,'product'=>['uuid'=>$installation->license->product->uuid,'slug'=>$installation->license->product->slug],'release'=>$installation->release?['uuid'=>$installation->release->uuid,'version'=>$installation->release->version]:null,'hardware_binding'=>['fingerprint'=>$installation->fingerprint,'fingerprint_version'=>$installation->fingerprint_version],'issued_at'=>$now->toISOString(),'expires_at'=>$expires->toISOString(),'server_timestamp'=>$now->timestamp,'refresh_after_seconds'=>config('office.lease_refresh_seconds'),'offline_grace_seconds'=>config('office.offline_grace_seconds'),'central_endpoint'=>config('office.public_url')]; $signature=$this->signer->sign($payload); LicenseLease::create(['uuid'=>$payload['lease_id'],'installation_id'=>$installation->id,'issued_at'=>$now,'expires_at'=>$expires,'payload'=>$payload,'signature'=>$signature]); InstallationEvent::create(['installation_id'=>$installation->id,'type'=>'lease_renewed','context'=>['lease_id'=>$payload['lease_id']],'occurred_at'=>$now]); return ['lease'=>$payload,'signature'=>$signature,'algorithm'=>'Ed25519','public_key'=>$this->signer->publicKey()]; } }
+
+use App\Models\Installation;
+
+/** @deprecated Agent state snapshots replaced expiring leases in Central 1.2. */
+final class LeaseService
+{
+    public function __construct(private AgentStateService $states) {}
+
+    public function issue(Installation $installation): array
+    {
+        return $this->states->issue($installation);
+    }
+}

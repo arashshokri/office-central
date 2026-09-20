@@ -1,19 +1,19 @@
 # Office Central
 
-Office Central is a production-oriented Laravel 12 control plane for products, customers, immutable releases, private packages, licenses, hardware-bound installations, signed offline leases, clone detection, security events, and audit history. The domain is product-neutral; Office is the first product configured by an administrator.
+Office Central is a production-oriented Laravel 12 control plane for products, customers, immutable releases, private packages, licenses, hardware-bound installations, signed access states, temporary locks, clone detection, security events, and audit history. The domain is product-neutral; Office is the first product configured by an administrator.
 
 ## Architecture
 
-Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. PostgreSQL is the source of truth, Redis backs cache, queues and rate limits through the pure-PHP Predis client, Nginx serves the application, package ZIPs live on private persistent storage, and Ed25519 signs leases independently of TLS. Compose runs `app`, `nginx`, `postgres`, `redis`, `queue-worker`, and `scheduler` with persistent volumes.
+Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. PostgreSQL is the source of truth, Redis backs cache, queues and rate limits through the pure-PHP Predis client, Nginx serves the application, package ZIPs live on private persistent storage, and Ed25519 signs access states independently of TLS. Compose runs `app`, `nginx`, `postgres`, `redis`, `queue-worker`, and `scheduler` with persistent volumes.
 
 ## Quick start
 
 Production requires Linux, Docker Engine, Compose v2, Git, and OpenSSL:
 
 ```bash
-git clone <private-repository> office-central
+git clone https://github.com/arashshokri/office-central.git office-central
 cd office-central
-sudo ./centralctl.sh install --domain license.company.com --public-ip 203.0.113.10 --email admin@company.com
+sudo ./centralctl.sh install --domain panel.ponet.ir --public-ip 203.0.113.10 --email admin@company.com
 ```
 
 Create an `A` record (and `AAAA` when used) before installation. Terminate automatically renewed ACME TLS at the edge. See [deployment](docs/deployment.md), [endpoint policy](docs/central-endpoint.md), and the [Persian administrator guide](docs/admin-guide-fa.md).
@@ -24,20 +24,20 @@ Run `php artisan office:create-admin` for an administrator. Roles are `super_adm
 
 ## Agent API
 
-- `POST /api/v1/licenses/activate`
+- `POST /api/v1/agent/activate`
+- `POST /api/v1/agent/state`
 - `POST /api/v1/installations/heartbeat`
-- `POST /api/v1/installations/lease`
 - `POST /api/v1/packages/token`
 - `GET /api/v1/packages/download/{token}`
 - `GET /health`
 
 Authenticated requests require a bearer installation credential plus fresh `X-Request-Nonce` and `X-Request-Timestamp`. Full license keys and credentials are returned once and only SHA-256 hashes are stored. Package tokens are short-lived and single-use. See [OpenAPI](openapi/openapi.yaml).
 
-## Licensing, clones, and outages
+## Licensing, temporary locks, clones, and outages
 
 Activation locks the license row in a transaction before counting installations. First activation binds stable hardware identifiers. A copied installation presenting different hardware receives `LICENSE_HARDWARE_MISMATCH`; Central records a clone event and leaves the original active.
 
-Every lease contains issued/expiry/server times, product/release, status, refresh and grace intervals, canonical endpoint, and signed hardware binding. Network, DNS, TLS, timeout, 502, and 503 failures are non-authoritative. A Phase 2 agent continues with its last valid signed lease through the configured offline grace. Only explicit security codes or grace expiry change access state. License failure never deletes customer files, uploads, or databases.
+Every state contains a monotonic revision, access decision, optional customer-facing message, product/release target, canonical endpoint, and signed hardware binding. Network, DNS, TLS, timeout, and HTTP 5xx failures are non-authoritative and never lock Office. An Agent keeps its last signed state indefinitely. Only a newer, valid Ed25519-signed state changes access. A temporary lock only displays a support screen; it never deletes customer files, uploads, or databases.
 
 ## Operations and testing
 
@@ -49,7 +49,7 @@ php artisan migrate
 php artisan test
 ```
 
-Tests cover activation, one-time credentials, invalid states, installation limits, clone rejection with original preservation, replay rejection, and the offline-grace contract. Production Compose validation requires a host with Docker installed.
+Tests cover activation, one-time credentials, signed state revisions, temporary lock/unlock, invalid states, installation limits, clone rejection with original preservation, replay rejection, roles, MFA, and indefinite fail-open behavior during Central outages. Production Compose execution requires a host with Docker installed.
 
 ## Phase 2
 

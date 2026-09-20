@@ -1,4 +1,43 @@
 <?php
+
 namespace Tests\Feature;
-use App\Models\{Product,Release,User}; use Illuminate\Foundation\Testing\RefreshDatabase; use Tests\TestCase;
-class AdminSecurityTest extends TestCase { use RefreshDatabase; public function test_login_works_behind_https_proxy_and_normalizes_email():void{$user=User::factory()->create(['email'=>'admin@example.com','password'=>'A-secure-password-123','role'=>'super_admin','active'=>true]);$this->withServerVariables(['REMOTE_ADDR'=>'172.29.87.20'])->withHeaders(['X-Forwarded-Proto'=>'https','X-Forwarded-Host'=>'my.ponet.ir','X-Forwarded-Port'=>'443'])->post('/login',['email'=>' ADMIN@EXAMPLE.COM ','password'=>'A-secure-password-123'])->assertRedirect(route('dashboard'));$this->assertAuthenticatedAs($user);} public function test_viewer_cannot_mutate_admin_resources():void{$viewer=User::factory()->create(['role'=>'viewer','active'=>true]);$this->actingAs($viewer)->post('/customers',['name'=>'Denied','status'=>'active'])->assertForbidden();$this->assertDatabaseMissing('customers',['name'=>'Denied']);} public function test_admin_can_create_customer():void{$admin=User::factory()->create(['role'=>'admin','active'=>true]);$this->actingAs($admin)->post('/customers',['name'=>'Allowed','status'=>'active'])->assertRedirect(route('customers.index'));$this->assertDatabaseHas('customers',['name'=>'Allowed']);} public function test_published_package_metadata_is_immutable():void{$product=Product::create(['name'=>'Office','slug'=>'office','status'=>'active']);$release=Release::create(['product_id'=>$product->id,'version'=>'1.0.0','channel'=>'stable','status'=>'published','source_type'=>'manual','package_path'=>'packages/old.zip','package_sha256'=>str_repeat('a',64),'published_at'=>now()]);$this->expectException(\DomainException::class);$release->update(['package_path'=>'packages/replaced.zip']);} }
+
+use App\Models\Product;
+use App\Models\Release;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class AdminSecurityTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_login_works_behind_https_proxy_and_normalizes_email(): void
+    {
+        $user = User::factory()->create(['email' => 'admin@example.com', 'password' => 'A-secure-password-123', 'role' => 'super_admin', 'active' => true]);
+        $this->withServerVariables(['REMOTE_ADDR' => '172.29.87.20'])->withHeaders(['X-Forwarded-Proto' => 'https', 'X-Forwarded-Host' => 'panel.ponet.ir', 'X-Forwarded-Port' => '443'])->post('/login', ['email' => ' ADMIN@EXAMPLE.COM ', 'password' => 'A-secure-password-123'])->assertRedirect(route('dashboard'));
+        $this->assertAuthenticatedAs($user);
+    }
+
+    public function test_viewer_cannot_mutate_admin_resources(): void
+    {
+        $viewer = User::factory()->create(['role' => 'viewer', 'active' => true]);
+        $this->actingAs($viewer)->post('/customers', ['name' => 'Denied', 'status' => 'active'])->assertForbidden();
+        $this->assertDatabaseMissing('customers', ['name' => 'Denied']);
+    }
+
+    public function test_admin_can_create_customer(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'active' => true]);
+        $this->actingAs($admin)->post('/customers', ['name' => 'Allowed', 'status' => 'active'])->assertRedirect(route('customers.index'));
+        $this->assertDatabaseHas('customers', ['name' => 'Allowed']);
+    }
+
+    public function test_published_package_metadata_is_immutable(): void
+    {
+        $product = Product::create(['name' => 'Office', 'slug' => 'office', 'status' => 'active']);
+        $release = Release::create(['product_id' => $product->id, 'version' => '1.0.0', 'channel' => 'stable', 'status' => 'published', 'source_type' => 'manual', 'package_path' => 'packages/old.zip', 'package_sha256' => str_repeat('a', 64), 'published_at' => now()]);
+        $this->expectException(\DomainException::class);
+        $release->update(['package_path' => 'packages/replaced.zip']);
+    }
+}

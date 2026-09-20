@@ -10,6 +10,6 @@ sudo ./centralctl.sh status
 sudo ./centralctl.sh doctor
 ```
 
-برای نسخه جدید از Tag بررسی‌شده استفاده کنید: `sudo ./centralctl.sh update central-v1.1.0`. پیش از Update به‌طور خودکار Backup گرفته می‌شود. Backup دستی با `sudo ./centralctl.sh backup` و بازگردانی با `sudo ./centralctl.sh restore /path/to/archive.tar.gz` انجام می‌شود. Rollback کد با `sudo ./centralctl.sh rollback` است.
+برای نسخه جدید از Tag بررسی‌شده استفاده کنید: `sudo ./centralctl.sh update v1.2.0`. پیش از Update به‌طور خودکار Backup گرفته می‌شود. Backup دستی با `sudo ./centralctl.sh backup` و بازگردانی با `sudo ./centralctl.sh restore /path/to/archive.tar.gz` انجام می‌شود. Rollback کد با `sudo ./centralctl.sh rollback` است.
 
-فایل `.env`، کلید امضای Central، رمزهای PostgreSQL/Redis و FQDN را بدون برنامه Migration تغییر ندهید. TLS باید برای همان FQDN از Let's Encrypt یا ACME صادر و خودکار تمدید شود. Agent به Certificate موقت Pin نمی‌شود؛ اعتبار Lease با کلید Ed25519 مستقل بررسی می‌شود.
+فایل `.env`، کلید امضای Central، رمزهای PostgreSQL/Redis و FQDN را بدون برنامه Migration تغییر ندهید. TLS باید برای همان FQDN از Let's Encrypt یا ACME صادر و خودکار تمدید شود. Agent به Certificate موقت Pin نمی‌شود؛ اعتبار وضعیت دسترسی با کلید Ed25519 مستقل بررسی می‌شود. قطع Central یا اینترنت هیچ‌وقت Office را قفل نمی‌کند و Agent آخرین وضعیت امضاشده را بدون انقضا نگه می‌دارد.

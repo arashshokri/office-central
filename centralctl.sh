@@ -61,7 +61,9 @@ restore_cmd(){
 }
 update_cmd(){
   need_root; need git; local tag="${1:-}"; [[ -n "$tag" ]] || die 'Specify an approved release tag.'; git -C "$ROOT_DIR" diff --quiet && git -C "$ROOT_DIR" diff --cached --quiet || die 'Repository has uncommitted changes.'
-  backup_cmd; git -C "$ROOT_DIR" fetch --tags --prune; git -C "$ROOT_DIR" rev-parse -q --verify "refs/tags/$tag" >/dev/null || die 'Tag does not exist.'; git -C "$ROOT_DIR" describe --tags --exact-match HEAD 2>/dev/null > "$ROOT_DIR/.previous-release" || true; git -C "$ROOT_DIR" checkout --detach "$tag"
+  git -C "$ROOT_DIR" fetch --tags --prune; git -C "$ROOT_DIR" rev-parse -q --verify "refs/tags/$tag" >/dev/null || die 'Tag does not exist.'
+  local expected_tag; expected_tag="v$(git -C "$ROOT_DIR" show "$tag:VERSION" | tr -d '[:space:]')"; [[ "$tag" == "$expected_tag" ]] || die "Release tag $tag does not match VERSION ${expected_tag#v}."
+  backup_cmd; git -C "$ROOT_DIR" describe --tags --exact-match HEAD 2>/dev/null > "$ROOT_DIR/.previous-release" || true; git -C "$ROOT_DIR" checkout --detach "$tag"
   if ! "${COMPOSE[@]}" up -d --build || ! "${COMPOSE[@]}" exec -T app php artisan migrate --force || ! curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health" >/dev/null; then echo 'Update failed; inspect migrations before rollback.'; exit 1; fi; echo "$tag" > "$ROOT_DIR/.deployed-version"
 }
 rollback_cmd(){ need_root; local tag="${1:-$(cat "$ROOT_DIR/.previous-release" 2>/dev/null)}"; [[ -n "$tag" ]]||die 'No previous release recorded.'; git -C "$ROOT_DIR" checkout --detach "$tag"; "${COMPOSE[@]}" up -d --build; curl -fsS "http://127.0.0.1:${INTERNAL_HTTP_PORT:-8787}/health" >/dev/null; }

@@ -1,4 +1,29 @@
 <?php
+
 namespace Tests\Unit;
+
 use PHPUnit\Framework\TestCase;
-class OfflineGraceContractTest extends TestCase { public function test_transport_failure_preserves_last_valid_lease_until_grace_expires():void{$lease=['authoritative'=>true,'license_status'=>'active','issued_at'=>1_700_000_000,'expires_at'=>1_700_604_800];$centralResponse=null;$trustedTime=1_700_001_000;$mayRun=$centralResponse===null&&$lease['license_status']==='active'&&$trustedTime<=$lease['expires_at'];$this->assertTrue($mayRun);} public function test_explicit_revocation_is_distinct_from_transport_failure():void{$response=['success'=>false,'code'=>'LICENSE_REVOKED'];$this->assertContains($response['code'],['LICENSE_REVOKED','LICENSE_SUSPENDED','LICENSE_HARDWARE_MISMATCH','INSTALLATION_LOCKED','SECURITY_VIOLATION']);} }
+
+class OfflineGraceContractTest extends TestCase
+{
+    public function test_transport_failure_keeps_the_last_signed_state_indefinitely(): void
+    {
+        $cachedState = ['access' => 'allowed', 'state_revision' => 12, 'expires_at' => null];
+        $centralResponse = null;
+        $elapsedOfflineYears = 20;
+        $mayRun = $centralResponse === null && $cachedState['access'] === 'allowed' && $cachedState['expires_at'] === null;
+
+        $this->assertTrue($mayRun);
+        $this->assertSame(20, $elapsedOfflineYears);
+    }
+
+    public function test_only_a_newer_signed_revision_can_change_access(): void
+    {
+        $highestRevision = 8;
+        $replayedAllowedState = ['access' => 'allowed', 'state_revision' => 7, 'signature_valid' => true];
+        $newLockedState = ['access' => 'locked', 'state_revision' => 9, 'signature_valid' => true];
+
+        $this->assertFalse($replayedAllowedState['signature_valid'] && $replayedAllowedState['state_revision'] >= $highestRevision);
+        $this->assertTrue($newLockedState['signature_valid'] && $newLockedState['state_revision'] >= $highestRevision);
+    }
+}

@@ -2,18 +2,18 @@
 
 Office Central does not bind ports 80 or 443. Its application Nginx is published at `0.0.0.0:8787` by default so a host or containerized Nginx UI can reach it. Use the host firewall to allow port 8787 only from the reverse proxy or trusted management network.
 
-Create a proxy entry for `my.ponet.ir` with upstream `http://127.0.0.1:8787`. Enable WebSocket support if the UI offers it, preserve the original Host header, and forward the client/protocol headers. A native Nginx server block uses:
+Create a proxy entry for `panel.ponet.ir` with upstream `http://127.0.0.1:8787`. Enable WebSocket support if the UI offers it, preserve the original Host header, and forward the client/protocol headers. A native Nginx server block uses:
 
 ```nginx
 server {
     listen 80;
-    server_name my.ponet.ir;
+    server_name panel.ponet.ir;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name my.ponet.ir;
+    server_name panel.ponet.ir;
 
     ssl_certificate /path/to/fullchain.pem;
     ssl_certificate_key /path/to/privkey.pem;
