@@ -17,6 +17,15 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - run: php artisan test
       - run: bash tests/Deployment/centralctl_test.sh
+      - run: sudo bash tests/Deployment/permissions_test.sh
+      - name: Build restrictive checkout and verify unprivileged PHP
+        run: |
+          umask 077
+          context="$(mktemp -d)"
+          trap 'rm -rf -- "$context"' EXIT
+          git archive HEAD | tar --no-same-permissions -x -C "$context"
+          docker build -f "$context/docker/php/Dockerfile" -t office-central-permission-test "$context"
+          docker run --rm --entrypoint php office-central-permission-test -r "require '/var/www/html/vendor/autoload.php'; require '/var/www/html/bootstrap/app.php'; echo 'Bootstrap is readable by the runtime.'.PHP_EOL;"
       - run: docker compose --env-file .env.example config --no-env-resolution --quiet
   helper:
     runs-on: ubuntu-latest

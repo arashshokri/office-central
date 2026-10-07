@@ -3,11 +3,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev libzi
 COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
 COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY docker/php/prepare-runtime.sh /usr/local/bin/office-central-prepare-runtime
 WORKDIR /var/www/html
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 COPY . .
-RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache /srv/office-central/packages \
+RUN bash /usr/local/bin/office-central-prepare-runtime /var/www/html \
+    && chmod 0644 /usr/local/etc/php/conf.d/opcache.ini /usr/local/etc/php/conf.d/uploads.ini \
+    && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache /srv/office-central/packages \
     && composer dump-autoload --optimize --no-dev \
     && chown -R www-data:www-data storage bootstrap/cache /srv/office-central/packages
 USER www-data

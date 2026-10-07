@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0-rc.2
+
+- Repair restrictive Git checkout permissions inside the PHP image before running as www-data.
+- Check application bootstrap readability in PHP health checks instead of reporting a broken runtime healthy.
+- Prepare only the public Nginx bind mount for readable assets/helper downloads; preserve host environment, backup and key permissions.
+- Use a scoped umask for Git checkout/merge while keeping secrets under umask 077.
+- Add restrictive-checkout regression tests and a Docker bootstrap smoke check to CI.
+
 ## 1.4.0-rc.1
 
 - Add a compiled Linux Office installer and persistent licensing daemon.

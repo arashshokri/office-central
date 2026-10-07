@@ -14,12 +14,16 @@
 
 ~~~bash
 cd /opt/office-central
-sudo bash centralctl.sh update v1.4.0-rc.1
-sudo bash centralctl.sh agent-build
+sudo bash centralctl.sh backup
+git fetch origin --tags
+(umask 022; git checkout --detach v1.4.0-rc.2)
+sudo bash centralctl.sh start
 sudo bash centralctl.sh doctor
 ~~~
 
-update ابتدا بکاپ می‌گیرد و نسخه را build/migrate می‌کند. agent-build را یک‌بار پس از ارتقا از v1.3.0 اجرا کنید؛ خود فرمان start نسخهٔ جدید نیز helperهای amd64 و arm64 را با Go داخل Docker می‌سازد. داده‌ها و کلید امضا حفظ می‌شوند. اولین build نیاز به اینترنت دارد.
+برای ارتقا از v1.3.0، ابتدا بکاپ و سپس checkout و start را در فرمان‌های جداگانه اجرا کنید تا ادامهٔ نصب با اسکریپت نسخهٔ جدید انجام شود. start نسخهٔ جدید helperهای amd64 و arm64 را با Go داخل Docker می‌سازد و build/migrate را انجام می‌دهد. داده‌ها و کلید امضا حفظ می‌شوند. اولین build نیاز به اینترنت دارد. قبل از checkout تغییرات محلی کد باید ذخیره شده باشند؛ .env و بکاپ‌ها داخل Git نیستند.
+
+اگر ارتقا به rc.1 در مرحلهٔ migration با Permission denied برای bootstrap/app.php متوقف شده، بکاپ قبل از ارتقا را نگه دارید و همین checkout و start را از rc.2 اجرا کنید؛ برای این بازیابی فرمان backup مجدد لازم نیست. rc.2 دسترسی فایل‌های داخل ایمیج و public را اصلاح می‌کند؛ دسترسی خصوصی .env، بکاپ و کلیدها حفظ می‌شود. در این وضعیت install را دوباره اجرا نکنید.
 
 در NPM دو Proxy Host روی شبکهٔ مشترک proxynet:
 

@@ -9,6 +9,8 @@ work="$(mktemp -d "$temp_root/centralctl-test.XXXXXX")"
 [[ "$work" == "$temp_root"/centralctl-test.* ]] || exit 1
 trap 'rm -rf -- "$work"' EXIT
 mkdir -p "$work/project" "$work/bin" "$work/state/sample"
+mkdir -p "$work/project/scripts" "$work/project/public/agent"
+cp "$REPO/scripts/prepare-public.sh" "$work/project/scripts/"
 cp "$REPO/centralctl.sh" "$REPO/.env.example" "$REPO/VERSION" "$work/project/"
 printf 'sample data\n' > "$work/state/sample/file"
 export MOCK_LOG="$work/commands" MOCK_STATE="$work/state" BACKUP_DIR="$work/project/backups"
@@ -126,7 +128,14 @@ logged 'docker network connect proxynet proxy-nginx'
 pass 'HTTPS/domain changes preserve keys and create/connect the shared proxy network'
 
 : > "$MOCK_LOG"
+printf 'public installer\n' > "$work/project/public/agent/install.sh"
+chmod 0700 "$work/project/public" "$work/project/public/agent"
+chmod 0600 "$work/project/public/agent/install.sh"
 run start
+[[ $(stat -c %a "$work/project/public/agent/install.sh") == 644 ]] || fail 'Nginx cannot read a restrictive checkout'
+[[ $(stat -c %a "$work/project/public/agent") == 755 ]] || fail 'Nginx cannot traverse public directories'
+[[ $(stat -c %a "$work/project/.env") == 600 ]] || fail 'Public preparation exposed the private environment'
+pass 'Restrictive public checkout is repaired while environment secrets stay private'
 logged 'compose exec -T app php artisan optimize:clear'
 logged 'compose exec -T app php artisan optimize'
 migrate_line="$(grep -n 'migrate --force' "$MOCK_LOG" | cut -d: -f1)"

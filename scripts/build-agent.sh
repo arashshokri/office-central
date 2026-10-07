@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+bash "$root/scripts/prepare-public.sh"
 cd "$root/agent"
 go test ./...
 for arch in amd64 arm64; do

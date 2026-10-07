@@ -76,6 +76,7 @@ health_cmd() {
 }
 agent_build() {
     require_docker
+    bash "$ROOT_DIR/scripts/prepare-public.sh"
     [[ -d "$ROOT_DIR/agent" ]] || return 0
     docker run --rm -v "$ROOT_DIR:/workspace" -w /workspace/agent golang:1-bookworm bash /workspace/scripts/build-agent.sh
 }
@@ -260,9 +261,9 @@ update_cmd() {
     backup_cmd
     printf '%s\n' "$previous" > "$ROOT_DIR/.previous-release"
     if [[ "$ref" == main && "$(git -C "$ROOT_DIR" branch --show-current)" == main ]]; then
-        git -C "$ROOT_DIR" merge --ff-only "$target"
+        (umask 022; git -C "$ROOT_DIR" merge --ff-only "$target")
     else
-        git -C "$ROOT_DIR" checkout --detach "$target"
+        (umask 022; git -C "$ROOT_DIR" checkout --detach "$target")
     fi
     deploy_stack
     printf 'Updated to %s.\n' "$ref"
@@ -274,7 +275,7 @@ rollback_cmd() {
     git -C "$ROOT_DIR" rev-parse --verify "$ref^{commit}" >/dev/null || die 'Rollback reference does not exist locally.'
     previous="$(git -C "$ROOT_DIR" rev-parse HEAD)"
     backup_cmd
-    git -C "$ROOT_DIR" checkout --detach "$ref"
+    (umask 022; git -C "$ROOT_DIR" checkout --detach "$ref")
     printf '%s\n' "$previous" > "$ROOT_DIR/.previous-release"
     deploy_stack
     printf 'Application rollback completed. Database migrations were not reversed.\n'

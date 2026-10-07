@@ -13,6 +13,8 @@ auth.json
 backups
 vendor
 node_modules
+storage/app/*
+storage/*.key
 storage/logs/*
 storage/framework/cache/*
 storage/framework/sessions/*
