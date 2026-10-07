@@ -1,6 +1,6 @@
 .PHONY: up down restart logs migrate test shell backup
 up:
-	docker compose up -d --build
+	bash centralctl.sh start
 down:
 	docker compose down
 restart:

@@ -1,6 +1,6 @@
 # Canonical endpoint and outage policy
 
-Agents store the stable URL `https://panel.ponet.ir`, never a raw IP. Create an `A` record from `panel.ponet.ir` to the Central IPv4 address with TTL 300; add an `AAAA` record for IPv6. Treat this FQDN as the service identity. When the server IP changes, update DNS and leave every agent configuration unchanged.
+Agents store the stable URL `https://scm.ponet.ir`, never a raw IP. Create an `A` record from `scm.ponet.ir` to the Nginx Proxy Manager IPv4 address with TTL 300; add an `AAAA` record for IPv6. Treat this FQDN as the service identity. When the server IP changes, update DNS and leave every agent configuration unchanged.
 
 Temporary DNS, TLS, routing, timeout, any unsigned HTTP error, malformed response, or an unavailable Central are communication failures. They never lock Office. The Agent keeps its last valid Ed25519-signed state indefinitely, continues serving Office, retries safely, and records a local warning. There is no offline expiry. Only a newer signed state revision can change access.
 

@@ -8,15 +8,19 @@ Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. Postgr
 
 ## Quick start
 
-Production requires Linux, Docker Engine, Compose v2, Git, and OpenSSL:
+Production requires Linux, Docker Engine, Compose v2.20+, Git, OpenSSL, and an existing Nginx Proxy Manager (NPM):
 
 ```bash
-git clone https://github.com/arashshokri/office-central.git office-central
+git clone --branch v1.3.0 https://github.com/arashshokri/office-central.git office-central
 cd office-central
-sudo ./centralctl.sh install --domain panel.ponet.ir --public-ip 203.0.113.10 --email admin@company.com
+sudo bash centralctl.sh install --domain scm.ponet.ir --email admin@company.com --proxy-network proxynet
 ```
 
-Create an `A` record (and `AAAA` when used) before installation. Terminate automatically renewed ACME TLS at the edge. See [deployment](docs/deployment.md), [endpoint policy](docs/central-endpoint.md), and the [Persian administrator guide](docs/admin-guide-fa.md).
+In NPM, add a Proxy Host for your domain with **Scheme `http`, Forward Hostname `office-central-web`, Forward Port `80`**. NPM and Central's web container must share `proxynet` (or the network specified at install). Central publishes no host ports; TLS certificates and Force SSL are managed in NPM. See the [Persian Docker/NPM guide](docs/docker-npm-fa.md), [deployment](docs/deployment.md), and [endpoint policy](docs/central-endpoint.md).
+
+The canonical domain for this installation is **`scm.ponet.ir`**. The installer defaults to it; keep it stable for Agent integrations. The panel is available at `https://scm.ponet.ir/login` after configuring NPM and SSL.
+
+Run `sudo bash centralctl.sh` for the interactive menu. `start` rebuilds/migrates the local code for web changes; `update` backs up and updates from GitHub `main`, or accepts a release tag. `proxy` displays the exact NPM settings. Use `--scheme http` at installation only when the domain is served over plain HTTP; switch to HTTPS with `proxy --scheme https` followed by `start` after enabling SSL in NPM.
 
 ## Admin panel
 
@@ -41,7 +45,7 @@ Every state contains a monotonic revision, access decision, optional customer-fa
 
 ## Operations and testing
 
-Use `centralctl.sh` for install, lifecycle, status, logs, doctor, backup, restore, tagged update, and rollback. The application Nginx listens directly on port 80. See [commands](docs/centralctl.md), [backup/restore](docs/backup-restore.md), and [updates](docs/update-rollback.md).
+Use `centralctl.sh` for install, lifecycle, status, logs, doctor, backup, restore, update, and rollback. The application Nginx listens on container port 80, reachable by NPM at `office-central-web:80`. See [commands](docs/centralctl.md), [backup/restore](docs/backup-restore.md), and [updates](docs/update-rollback.md).
 
 ```bash
 php artisan key:generate

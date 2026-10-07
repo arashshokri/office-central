@@ -1,6 +1,8 @@
 # راهنمای ساده مدیر
 
-ابتدا یک دامنه پایدار مانند `license.company.com` انتخاب و یک رکورد `A` با TTL برابر 300 به IP سرور Central وصل کنید. این نام هویت دائمی سرویس است؛ هنگام تغییر سرور فقط IP رکورد DNS را عوض کنید. Agentها همیشه به `https://license.company.com` وصل می‌شوند.
+دامنهٔ ثابت سرویس `scm.ponet.ir` است. رکورد `A` را به IP سرور Nginx Proxy Manager وصل کنید. این نام هویت دائمی سرویس است؛ هنگام تغییر سرور فقط IP رکورد DNS را عوض کنید. Agentها همیشه به `https://scm.ponet.ir` وصل می‌شوند.
+
+اگر Nginx Proxy Manager دارید، [راهنمای فارسی Docker و NPM](docker-npm-fa.md) را دنبال کنید. Central پورت عمومی اشغال نمی‌کند؛ مقصد داخل پروکسی `http://office-central-web:80` روی شبکهٔ مشترک `proxynet` یا شبکهٔ انتخابی شما است. دامنه و SSL را در پنل پروکسی تنظیم کنید.
 
 ```bash
 git clone <private-repository> office-central

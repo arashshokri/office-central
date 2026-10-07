@@ -1,15 +1,17 @@
-version: "3.8"
-
 services:
   web:
     image: nginx:1.28-alpine
     restart: unless-stopped
 
-    ports:
-      - "80:80"
+    expose:
+      - "80"
+
+    environment:
+      CENTRAL_WEB_IP: "${CENTRAL_WEB_IP:-172.29.87.20}"
+      NGINX_ENVSUBST_FILTER: "^CENTRAL_WEB_IP"
 
     volumes:
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/default.conf:/etc/nginx/templates/default.conf.template:ro
       - ./public:/var/www/html/public:ro
 
     depends_on:
@@ -30,15 +32,22 @@ services:
 
     networks:
       default:
-        ipv4_address: 172.29.87.20
+        ipv4_address: "${CENTRAL_WEB_IP:-172.29.87.20}"
+      proxy:
+        aliases:
+          - office-central-web
 
   app:
+    image: office-central-app:local
     build:
       context: .
       dockerfile: docker/php/Dockerfile
 
     env_file:
       - .env
+
+    environment:
+      CENTRAL_TRUSTED_PROXIES: "${CENTRAL_WEB_IP:-172.29.87.20}"
 
     restart: unless-stopped
 
@@ -107,9 +116,8 @@ services:
       retries: 10
 
   queue-worker:
-    build:
-      context: .
-      dockerfile: docker/php/Dockerfile
+    image: office-central-app:local
+    pull_policy: never
 
     env_file:
       - .env
@@ -133,9 +141,8 @@ services:
         condition: service_healthy
 
   scheduler:
-    build:
-      context: .
-      dockerfile: docker/php/Dockerfile
+    image: office-central-app:local
+    pull_policy: never
 
     env_file:
       - .env
@@ -165,4 +172,7 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 172.29.87.0/24
+        - subnet: "${CENTRAL_INTERNAL_SUBNET:-172.29.87.0/24}"
+  proxy:
+    external: true
+    name: "${PROXY_NETWORK:-proxynet}"

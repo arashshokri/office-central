@@ -4,7 +4,7 @@ The Agent is deliberately not installed in a live Office instance during Central
 
 ## Persistent state
 
-The Agent stores `https://panel.ponet.ir`, installation ID, the one-time installation credential, the independently provisioned Central public signing key, highest accepted `state_revision`, last signed state, and signed hardware binding under root-only permissions. The raw activation license is discarded after activation and is never stored in the Office database. A public key returned by the API is informational and must never replace the pinned trust key by itself.
+The Agent stores `https://scm.ponet.ir`, installation ID, the one-time installation credential, the independently provisioned Central public signing key, highest accepted `state_revision`, last signed state, and signed hardware binding under root-only permissions. The raw activation license is discarded after activation and is never stored in the Office database. A public key returned by the API is informational and must never replace the pinned trust key by itself.
 
 ## Availability rule: fail open indefinitely
 
@@ -14,9 +14,9 @@ Only a newer Ed25519-signed response from Central may change access. The Agent r
 
 ## Routes
 
-- Activation: `POST https://panel.ponet.ir/api/v1/agent/activate`
-- State synchronization: `POST https://panel.ponet.ir/api/v1/agent/state`
-- Package token: `POST https://panel.ponet.ir/api/v1/packages/token`
+- Activation: `POST https://scm.ponet.ir/api/v1/agent/activate`
+- State synchronization: `POST https://scm.ponet.ir/api/v1/agent/state`
+- Package token: `POST https://scm.ponet.ir/api/v1/packages/token`
 
 Authenticated calls use the installation bearer credential plus a unique nonce and current timestamp. Hardware mismatch is reported to Central and must not mutate customer data.
 

@@ -3,6 +3,7 @@
 .env
 .env.backup
 .env.production
+.env.installing.*
 /.codex-composer-new.phar
 /backups
 /.deployed-version
