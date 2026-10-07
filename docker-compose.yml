@@ -37,6 +37,30 @@ services:
         aliases:
           - office-central-web
 
+  update-web:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    expose: ["80"]
+    environment:
+      CENTRAL_WEB_IP: "${CENTRAL_UPDATE_IP:-172.29.87.21}"
+      NGINX_ENVSUBST_FILTER: "^CENTRAL_WEB_IP"
+    volumes:
+      - ./docker/nginx/update.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./public:/var/www/html/public:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/agent/bootstrap.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      default:
+        ipv4_address: "${CENTRAL_UPDATE_IP:-172.29.87.21}"
+      proxy:
+        aliases: [office-central-update]
+
   app:
     image: office-central-app:local
     build:
@@ -47,13 +71,14 @@ services:
       - .env
 
     environment:
-      CENTRAL_TRUSTED_PROXIES: "${CENTRAL_WEB_IP:-172.29.87.20}"
+      CENTRAL_TRUSTED_PROXIES: "${CENTRAL_WEB_IP:-172.29.87.20},${CENTRAL_UPDATE_IP:-172.29.87.21}"
 
     restart: unless-stopped
 
     volumes:
       - application_storage:/var/www/html/storage
       - package_data:/srv/office-central/packages
+      - ./public/agent:/var/www/html/public/agent:ro
 
     depends_on:
       postgres:

@@ -1,5 +1,7 @@
 <?php
 
+\Illuminate\Support\Facades\Route::get('/agent/bootstrap.json', \App\Http\Controllers\AgentBootstrapController::class);
+
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\LicenseController;

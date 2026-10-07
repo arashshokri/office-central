@@ -1,0 +1,33 @@
+
+# Protected customer target. The owner-only production stage is never an
+# ancestor of this image: readable application layers are excluded.
+FROM php-base AS customer
+ARG APP_RELEASE_VERSION=dev
+LABEL org.opencontainers.image.title="Office Customer Runtime" \
+      org.opencontainers.image.version="${APP_RELEASE_VERSION}" \
+      ir.ponet.office.source-protection="ioncube"
+ENV APP_ENV=production APP_DEBUG=false XDG_CONFIG_HOME=/tmp/caddy/config XDG_DATA_HOME=/tmp/caddy/data
+COPY --from=encoded --chown=www-data:www-data / /app/
+COPY --from=loader /ioncube_loader_lin_8.4_ts.so /usr/local/lib/ioncube_loader_lin_8.4_ts.so
+RUN printf 'zend_extension=/usr/local/lib/ioncube_loader_lin_8.4_ts.so\n' > /usr/local/etc/php/conf.d/00-ioncube.ini
+COPY --from=vendor --chown=www-data:www-data /app/vendor /app/vendor
+COPY --from=assets --chown=www-data:www-data /build/public/build /app/public/build
+COPY --from=terminal-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=terminal-runtime --chown=www-data:www-data /gateway /gateway
+COPY --from=ssh-prerequisites /office-ssh-packages /app/office-ssh-packages
+COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY docker/php.ini /usr/local/etc/php/conf.d/zz-leave-panel.ini
+RUN mkdir -p /app/storage/app/private /app/storage/app/public /app/storage/app/backups \
+      /app/storage/framework/cache/data /app/storage/framework/sessions /app/storage/framework/views \
+      /app/storage/logs /app/bootstrap/cache /tmp/caddy/config /tmp/caddy/data \
+    && ln -s ../storage/app/public /app/public/storage \
+    && chown -R root:root /app/protected-views && chmod -R a-w /app/protected-views \
+    && chown -R www-data:www-data /app/storage /app/bootstrap/cache /tmp/caddy \
+    && php -r 'if (!extension_loaded("ionCube Loader")) exit(1);' \
+    && php artisan package:discover --ansi
+USER www-data
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+    CMD php -r "exit(@file_get_contents('http://127.0.0.1:8080/up') === false ? 1 : 0);"
+CMD ["sh", "-c", "php artisan config:cache && exec frankenphp run --config /etc/caddy/Caddyfile"]
+# END OFFICE MANAGED CUSTOMER TARGET

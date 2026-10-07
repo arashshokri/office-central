@@ -24,6 +24,10 @@
 /storage/*.key
 /storage/pail
 /vendor
+/public/agent/office-agent-linux-*
+/public/agent/checksums.txt
+/.build-validation
+__pycache__/
 Homestead.json
 Homestead.yaml
 Thumbs.db

@@ -1,6 +1,8 @@
 @extends('layouts.app')
 
 @section('content')
+<p>نوع نصب: {{ $license->activation_mode }} — کد مصرف‌شده: {{ $license->consumed_at ? $license->consumed_at->toISOString() : 'خیر' }}</p>
+
 <div class="page-title">
     <div><h1>{{ __('ui.license_details') }}</h1><p dir="ltr">{{ $license->uuid }}</p></div>
     <a class="secondary button" href="{{ route('licenses.index') }}">{{ __('ui.back') }}</a>

@@ -17,7 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: array_filter(array_map('trim', explode(',', (string) env('CENTRAL_TRUSTED_PROXIES', '172.29.87.20')))), headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_HOST | Request::HEADER_X_FORWARDED_PORT | Request::HEADER_X_FORWARDED_PROTO);
         $middleware->append(\App\Http\Middleware\RequestId::class);
         $middleware->web(append: [\App\Http\Middleware\SetLocale::class]);
-        $middleware->alias(['agent.https'=>\App\Http\Middleware\RequireHttpsForAgent::class,'installation.auth'=>\App\Http\Middleware\AuthenticateInstallation::class,'replay'=>\App\Http\Middleware\PreventReplay::class,'role'=>\App\Http\Middleware\RequireRole::class]);
+        $middleware->alias(['agent.device'=>\App\Http\Middleware\VerifyAgentDevice::class,'agent.https'=>\App\Http\Middleware\RequireHttpsForAgent::class,'installation.auth'=>\App\Http\Middleware\AuthenticateInstallation::class,'replay'=>\App\Http\Middleware\PreventReplay::class,'role'=>\App\Http\Middleware\RequireRole::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

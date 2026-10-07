@@ -20,7 +20,7 @@ class License extends Model
 
     protected function casts(): array
     {
-        return ['status' => LicenseStatus::class, 'expires_at' => 'datetime', 'activated_at' => 'datetime', 'temporarily_locked_at' => 'datetime', 'temporarily_unlocked_at' => 'datetime', 'metadata' => 'array'];
+        return ['status' => LicenseStatus::class, 'deployment_config' => 'array', 'consumed_at' => 'datetime', 'expires_at' => 'datetime', 'activated_at' => 'datetime', 'temporarily_locked_at' => 'datetime', 'temporarily_unlocked_at' => 'datetime', 'metadata' => 'array'];
     }
 
     public function customer()

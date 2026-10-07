@@ -22,7 +22,7 @@ class Installation extends Model
 
     protected function casts(): array
     {
-        return ['status' => InstallationStatus::class, 'health' => 'array', 'first_seen_at' => 'datetime', 'last_seen_at' => 'datetime', 'last_state_synced_at' => 'datetime', 'activated_at' => 'datetime', 'locked_at' => 'datetime'];
+        return ['status' => InstallationStatus::class, 'health' => 'array', 'deployment_receipt' => 'array', 'completed_at' => 'datetime', 'agent_sequence' => 'integer', 'first_seen_at' => 'datetime', 'last_seen_at' => 'datetime', 'last_state_synced_at' => 'datetime', 'activated_at' => 'datetime', 'locked_at' => 'datetime'];
     }
 
     public function license()

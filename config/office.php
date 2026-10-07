@@ -3,6 +3,8 @@
 return [
     'version' => env('CENTRAL_VERSION', trim((string) file_get_contents(base_path('VERSION')))),
     'public_url' => env('CENTRAL_PUBLIC_URL', env('APP_URL')),
+    'agent_url' => env('CENTRAL_AGENT_URL', 'https://update.ponet.ir'),
+    'clone_lock_message' => 'این سامانه به دلیل تغییر سخت‌افزار غیرفعال شده است. برای دریافت لایسنس جدید با واحد فروش یا نماینده فروش تماس بگیرید.',
     'require_https' => env('CENTRAL_REQUIRE_HTTPS', true),
     'agent_poll_seconds' => (int) env('AGENT_STATE_POLL_SECONDS', 5),
     'health_interval_seconds' => (int) env('LICENSE_HEALTH_INTERVAL_SECONDS', 43200),

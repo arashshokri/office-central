@@ -55,6 +55,8 @@ php artisan test
 
 Tests cover activation, one-time credentials, signed state revisions, temporary lock/unlock, invalid states, installation limits, clone rejection with original preservation, replay rejection, roles, MFA, and indefinite fail-open behavior during Central outages. Production Compose execution requires a host with Docker installed.
 
-## Phase 2
+## Office customer helper (release candidate)
 
-The Office source and deployment topology are intentionally not assumed. Phase 2 adds the Go agent, real hardware collectors, cached state, boot enforcement, device signing, package installer/upgrader, and health reporting. See [agent integration](docs/phase-2-agent.md).
+The compiled Linux helper uses `https://update.ponet.ir`, signed v2 device requests, hardware-bound access states, one-use install reservations and health-confirmed consumption. It loads protected runtime images, preserves customer volumes and encryption keys, snapshots existing data before migrations, and supports in-panel reactivation after a hardware transfer. The `customer` Office build requires a licensed ionCube encoder and matching loader; raw GitHub ZIPs cannot be installed with this protocol. See the [complete Persian setup guide](docs/office-agent-fa.md) and [protocol](docs/phase-2-agent.md).
+
+The candidate tag is `v1.4.0-rc.1`. Customer Docker/ionCube smoke testing is still required on Linux before a production release. Central's update-only Nginx service is reachable by NPM at `office-central-update:80`; it exposes no admin/login routes. Existing v1 licenses remain compatible. Build helpers with `bash centralctl.sh agent-build` or `bash scripts/build-agent.sh` when Go is available.

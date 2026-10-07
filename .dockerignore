@@ -21,4 +21,8 @@ bootstrap/cache/*.php
 .phpunit.cache
 .phpunit.result.cache
 tests
+agent
+integrations
+scripts
+.github
 *.log

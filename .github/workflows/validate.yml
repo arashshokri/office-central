@@ -1,0 +1,36 @@
+name: Validate
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  central:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: sodium, zip, pdo_sqlite
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: php artisan test
+      - run: bash tests/Deployment/centralctl_test.sh
+      - run: docker compose --env-file .env.example config --no-env-resolution --quiet
+  helper:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - run: cd agent && go vet ./... && go test -race ./...
+      - run: bash scripts/build-agent.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: office-agent-linux
+          path: |
+            public/agent/office-agent-linux-*
+            public/agent/checksums.txt

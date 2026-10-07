@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'state_pending' => 'در انتظار تکمیل نصب',
     'app' => 'مرکز مدیریت آفیس', 'dashboard' => 'داشبورد', 'customers' => 'مشتریان', 'products' => 'محصولات', 'releases' => 'نسخه‌ها',
     'licenses' => 'لایسنس‌ها', 'installations' => 'نصب‌ها', 'security_events' => 'رویدادهای امنیتی', 'audit_logs' => 'گزارش تغییرات',
     'login' => 'ورود', 'email' => 'ایمیل', 'password' => 'رمز عبور', 'logout' => 'خروج', 'create' => 'ایجاد', 'save' => 'ذخیره', 'actions' => 'عملیات',

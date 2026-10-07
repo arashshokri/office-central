@@ -44,6 +44,13 @@ class LicenseController extends Controller
     public function store(Request $request, LicenseKeyService $keys, AuditService $audit)
     {
         $data = $request->validate([
+            'activation_mode' => ['nullable', 'in:legacy,installer_once'],
+            'deployment.app_url' => ['nullable', 'required_if:activation_mode,installer_once', 'url:https', 'max:255'],
+            'deployment.admin_email' => ['nullable', 'required_if:activation_mode,installer_once', 'email', 'max:255'],
+            'deployment.admin_name' => ['nullable', 'string', 'max:100'],
+            'deployment.bind_ip' => ['nullable', 'ip'],
+            'deployment.port' => ['nullable', 'integer', 'min:1024', 'max:65535'],
+            'deployment.proxy_network' => ['nullable', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/D'],
             'customer_id' => ['required', 'exists:customers,id'],
             'product_id' => ['required', 'exists:products,id'],
             'release_id' => ['nullable', 'exists:releases,id'],
@@ -55,6 +62,14 @@ class LicenseController extends Controller
             abort_unless(Release::whereKey($data['release_id'])->where('product_id', $data['product_id'])->exists(), 422);
         }
 
+        if (($data['activation_mode'] ?? 'legacy') === 'installer_once') {
+            $release = Release::whereKey($data['release_id'] ?? 0)->first();
+            abort_unless($release?->status->value === 'published' && $release->runtime_manifest, 422, 'Assign a protected runtime bundle first.');
+            $data['max_installations'] = 1;
+            $data['deployment']['port'] = (int) ($data['deployment']['port'] ?? 8080);
+            $data['deployment_config'] = $data['deployment'];
+        }
+        unset($data['deployment']);
         $raw = $keys->generate();
         $license = DB::transaction(fn () => License::create(array_merge($data, [
             'license_key_hash' => $keys->hash($raw),

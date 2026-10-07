@@ -66,6 +66,7 @@ proxy_info() {
         printf '  HTTP mode: use proxy --scheme https after configuring SSL.\n'
     fi
     printf '  Advanced (for ZIP uploads): client_max_body_size 1024m;\n'
+    printf 'Update host: update.ponet.ir -> http://office-central-update:80 (Force SSL)\n'
     printf 'Panel: %s/login\n' "$(env_value APP_URL)"
 }
 health_cmd() {
@@ -73,11 +74,16 @@ health_cmd() {
     "${COMPOSE[@]}" exec -T web wget -q -O - http://127.0.0.1/health || return 1
     printf '\n'
 }
-build_app() { "${COMPOSE[@]}" build --pull app; }
+agent_build() {
+    require_docker
+    [[ -d "$ROOT_DIR/agent" ]] || return 0
+    docker run --rm -v "$ROOT_DIR:/workspace" -w /workspace/agent golang:1-bookworm bash /workspace/scripts/build-agent.sh
+}
+build_app() { agent_build; "${COMPOSE[@]}" build --pull app; }
 deploy_stack_without_build() {
     set_env CENTRAL_VERSION "$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
     # Migrate before the new web, queue and scheduler processes accept work.
-    "${COMPOSE[@]}" stop web queue-worker scheduler
+    "${COMPOSE[@]}" stop web update-web queue-worker scheduler
     "${COMPOSE[@]}" up -d --wait --wait-timeout 180 postgres redis app
     "${COMPOSE[@]}" exec -T app php artisan migrate --force
     "${COMPOSE[@]}" exec -T app php artisan optimize:clear
@@ -288,6 +294,7 @@ doctor_cmd() {
         else printf 'Proxy container is missing from the shared network.\n'; failed=1; fi
     fi
     "${COMPOSE[@]}" exec -T web nginx -t || failed=1
+    "${COMPOSE[@]}" exec -T update-web nginx -t || failed=1
     "${COMPOSE[@]}" exec -T app sh -c 'test -w /srv/office-central/packages && test -w /var/www/html/storage' || failed=1
     health_cmd || failed=1
     "${COMPOSE[@]}" exec -T app php artisan migrate:status || failed=1
@@ -304,6 +311,7 @@ Office Central Docker manager (Bash, Docker Compose v2)
        [--scheme https|http] [--skip-admin]
   bash centralctl.sh resume                Complete an interrupted installation
   bash centralctl.sh start                 Build, migrate and start / apply configuration
+  bash centralctl.sh agent-build           Build Linux customer helpers (amd64/arm64)
   bash centralctl.sh stop|restart|status|health|doctor
   bash centralctl.sh logs [SERVICE]
   bash centralctl.sh admin [EMAIL]          Create/reset administrator interactively
@@ -341,6 +349,7 @@ main() {
     if (($#)); then shift; fi
     case "$cmd" in
         install) install_cmd "$@";; resume) resume_cmd;;
+        agent-build) agent_build;;
         start) require_env; require_docker; deploy_stack;;
         stop|restart) require_env; require_docker; "${COMPOSE[@]}" "$cmd";;
         status) require_env; require_docker; "${COMPOSE[@]}" ps -a;;

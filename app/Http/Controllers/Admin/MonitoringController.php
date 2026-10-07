@@ -54,6 +54,7 @@ class MonitoringController extends Controller
         $data = $request->validate(['release_id' => ['nullable', 'exists:releases,id']]);
         $release = empty($data['release_id']) ? null : Release::findOrFail($data['release_id']);
         abort_if($release && ($release->product_id !== $installation->product_id || $release->status->value !== 'published'), 422);
+        abort_if($release && $installation->device_public_key && ! $release->runtime_manifest, 422, 'Managed Office requires a protected runtime bundle.');
 
         DB::transaction(function () use ($installation, $release, $audit): void {
             $before = $installation->toArray();

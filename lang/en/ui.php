@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'state_pending' => 'Installation pending',
     'app' => 'Office Central', 'dashboard' => 'Dashboard', 'customers' => 'Customers', 'products' => 'Products', 'releases' => 'Releases',
     'licenses' => 'Licenses', 'installations' => 'Installations', 'security_events' => 'Security events', 'audit_logs' => 'Audit logs',
     'login' => 'Sign in', 'email' => 'Email', 'password' => 'Password', 'logout' => 'Sign out', 'create' => 'Create', 'save' => 'Save', 'actions' => 'Actions',
