@@ -46,6 +46,18 @@ class InstallerProtocolTest extends TestCase
     private function receipt(Release $release):array {
         return ['hardware'=>$this->hardware,'release_id'=>$release->uuid,'package_sha256'=>$release->package_sha256,'application_version'=>$release->version,'health_ok'=>true];
     }
+    public function test_signed_customer_state_contains_recoverable_full_key_and_never_a_mask(): void {
+        $license=$this->license();
+        $license->update(['license_key_encrypted'=>'OFF-AAAA-BBBB-CCCC-DDDD']);
+        $first=$this->signed('begin',$this->activation())->assertOk()->json('data');
+        $this->signed('complete',$this->receipt($license->release),$first['credential'])->assertOk();
+        $state=$this->payload($this->signed('state',['hardware'=>$this->hardware],$first['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertSame('OFF-AAAA-BBBB-CCCC-DDDD',$state['license']['display_key']);
+        $this->assertStringNotContainsString('OFF-AAAA-BBBB-CCCC-DDDD',$license->fresh()->getRawOriginal('license_key_encrypted'));
+        $license->update(['license_key_encrypted'=>null]);
+        $state=$this->payload($this->signed('state',['hardware'=>$this->hardware],$first['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertNull($state['license']['display_key']);
+    }
     public function test_deleted_license_returns_signed_lock_to_installed_v2_agent_without_deleting_data():void {
         $license=$this->license();
         $data=$this->signed('begin',$this->activation())->assertOk()->json('data');

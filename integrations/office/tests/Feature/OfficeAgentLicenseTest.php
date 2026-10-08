@@ -1,32 +1,43 @@
 <?php
+
 namespace Tests\Feature;
 
+use App\Http\Controllers\SettingsController;
+use App\Models\User;
+use App\Services\BackupManager;
 use App\Services\OfficeLicense;
+use Illuminate\Http\Request;
 use Tests\TestCase;
 
 class OfficeAgentLicenseTest extends TestCase
 {
     private string $dir;
+
     private $process;
+
     private array $state;
+
     private string $centralSecret;
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->dir = sys_get_temp_dir().'/office-license-'.bin2hex(random_bytes(8));
         mkdir($this->dir, 0700);
-        $pair = sodium_crypto_sign_keypair(); $this->centralSecret = sodium_crypto_sign_secretkey($pair);
-        $device = sodium_crypto_sign_keypair(); $key = sodium_crypto_sign_secretkey($device);
+        $pair = sodium_crypto_sign_keypair();
+        $this->centralSecret = sodium_crypto_sign_secretkey($pair);
+        $device = sodium_crypto_sign_keypair();
+        $key = sodium_crypto_sign_secretkey($device);
         $hardware = hash('sha256', 'fixture-host');
         file_put_contents($this->dir.'/device.key', $key);
-        $this->state = ['kind'=>'state','protocol'=>2,'product'=>'office','installation_id'=>'test-installation',
-            'sequence'=>1,'access'=>'allowed','completed'=>true,'hardware_fingerprint'=>$hardware,'presented_fingerprint'=>$hardware,
-            'device_public_key'=>sodium_bin2base64(sodium_crypto_sign_publickey($device),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)];
+        $this->state = ['kind' => 'state', 'protocol' => 2, 'product' => 'office', 'installation_id' => 'test-installation',
+            'sequence' => 1, 'access' => 'allowed', 'completed' => true, 'hardware_fingerprint' => $hardware, 'presented_fingerprint' => $hardware,
+            'device_public_key' => sodium_bin2base64(sodium_crypto_sign_publickey($device), SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)];
         file_put_contents($this->dir.'/fingerprint', $hardware);
-        file_put_contents($this->dir.'/trust.json', json_encode(['installation_id'=>'test-installation',
-            'public_key'=>sodium_bin2base64(sodium_crypto_sign_publickey($pair),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)]));
-        config(['office-agent.enabled'=>true,'office-agent.state_dir'=>$this->dir,
-            'office-agent.socket'=>$this->dir.'/control.sock','office-agent.control_token'=>str_repeat('a',64)]);
+        file_put_contents($this->dir.'/trust.json', json_encode(['installation_id' => 'test-installation',
+            'public_key' => sodium_bin2base64(sodium_crypto_sign_publickey($pair), SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)]));
+        config(['office-agent.enabled' => true, 'office-agent.state_dir' => $this->dir,
+            'office-agent.socket' => $this->dir.'/control.sock', 'office-agent.control_token' => str_repeat('a', 64)]);
         $this->writeState();
         $script = <<<'PHP'
 <?php
@@ -38,83 +49,182 @@ while($connection=stream_socket_accept($server,10)){
     preg_match('/Content-Length: (\d+)/i',$header,$length);
     $body='';while(strlen($body)<(int)$length[1]){$body.=fread($connection,(int)$length[1]-strlen($body));}
     $data=json_decode($body,true);
-    $fp=file_get_contents($dir.'/fingerprint');
-    $sig=sodium_crypto_sign_detached("office-hardware-proof/v2\n".$data['Nonce']."\n".$fp,file_get_contents($dir.'/device.key'));
-    $out=json_encode(['fingerprint'=>$fp,'signature'=>sodium_bin2base64($sig,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)]);
+    preg_match('~^POST (\S+)~',$header,$path);
+    file_put_contents($dir.'/requests',json_encode(['path'=>$path[1],'body'=>$data])."\n",FILE_APPEND);
+    if($path[1]==='/identity') {
+        $fp=file_get_contents($dir.'/fingerprint');
+        $sig=sodium_crypto_sign_detached("office-hardware-proof/v2\n".$data['Nonce']."\n".$fp,file_get_contents($dir.'/device.key'));
+        $result=['fingerprint'=>$fp,'signature'=>sodium_bin2base64($sig,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)];
+    } elseif($path[1]==='/check-update') {
+        $result=['confirmation_supported'=>!file_exists($dir.'/old-helper'),'installed_version'=>'3.8.22',
+            'update'=>['available'=>true,'version'=>'3.8.23','release_id'=>'b80a7eb6-8d49-4f42-b3ed-16e3a916b57e']];
+    } else {$result=['status'=>'running','version'=>'3.8.23'];}
+    $out=json_encode($result);
     fwrite($connection,"HTTP/1.1 200 OK\r\nContent-Length: ".strlen($out)."\r\nConnection: close\r\n\r\n".$out);
     fclose($connection);
 }
 PHP;
         file_put_contents($this->dir.'/server.php', $script);
-        $this->process = proc_open([PHP_BINARY, '-n', $this->dir.'/server.php', $this->dir], [0=>['pipe','r'],1=>['file',$this->dir.'/stdout','a'],2=>['file',$this->dir.'/stderr','a']], $pipes);
-        if (isset($pipes[0])) { fclose($pipes[0]); }
-        for ($i=0;$i<100&&!file_exists($this->dir.'/control.sock');$i++) { usleep(10000); }
+        $this->process = proc_open([PHP_BINARY, '-n', $this->dir.'/server.php', $this->dir], [0 => ['pipe', 'r'], 1 => ['file', $this->dir.'/stdout', 'a'], 2 => ['file', $this->dir.'/stderr', 'a']], $pipes);
+        if (isset($pipes[0])) {
+            fclose($pipes[0]);
+        }
+        for ($i = 0; $i < 100 && ! file_exists($this->dir.'/control.sock'); $i++) {
+            usleep(10000);
+        }
     }
+
     protected function tearDown(): void
     {
-        if (is_resource($this->process)) { proc_terminate($this->process); proc_close($this->process); }
-        foreach (glob($this->dir.'/*') as $file) { unlink($file); } rmdir($this->dir);
+        if (is_resource($this->process)) {
+            proc_terminate($this->process);
+            proc_close($this->process);
+        }
+        foreach (glob($this->dir.'/*') as $file) {
+            unlink($file);
+        } rmdir($this->dir);
         parent::tearDown();
     }
-    private function writeState(): void {
-        $raw=json_encode($this->state);
-        file_put_contents($this->dir.'/state.json',json_encode(['payload'=>sodium_bin2base64($raw,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),
-            'signature'=>sodium_bin2base64(sodium_crypto_sign_detached("office-agent/v2\n".$raw,$this->centralSecret),SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),'algorithm'=>'Ed25519']));
+
+    private function writeState(): void
+    {
+        $raw = json_encode($this->state);
+        file_put_contents($this->dir.'/state.json', json_encode(['payload' => sodium_bin2base64($raw, SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING),
+            'signature' => sodium_bin2base64(sodium_crypto_sign_detached("office-agent/v2\n".$raw, $this->centralSecret), SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING), 'algorithm' => 'Ed25519']));
     }
-    public function test_signed_allowed_state_works_without_contacting_central(): void {
+
+    public function test_signed_allowed_state_works_without_contacting_central(): void
+    {
         $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
         $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
     }
-    public function test_copied_state_is_locked_by_fresh_host_proof(): void {
-        file_put_contents($this->dir.'/fingerprint',hash('sha256','cloned-host'));
+
+    public function test_copied_state_is_locked_by_fresh_host_proof(): void
+    {
+        file_put_contents($this->dir.'/fingerprint', hash('sha256', 'cloned-host'));
         $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
     }
-    public function test_forged_state_and_authoritative_lock_are_rejected(): void {
-        file_put_contents($this->dir.'/state.json','{"payload":"ZmFrZQ","signature":"fake","algorithm":"Ed25519"}');
+
+    public function test_forged_state_and_authoritative_lock_are_rejected(): void
+    {
+        file_put_contents($this->dir.'/state.json', '{"payload":"ZmFrZQ","signature":"fake","algorithm":"Ed25519"}');
         $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
-        $this->state['access']='locked';$this->writeState();
+        $this->state['access'] = 'locked';
+        $this->writeState();
         $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
     }
-    public function test_legacy_owner_installation_remains_accessible(): void {
-        config(['office-agent.enabled'=>false]);
+
+    public function test_legacy_owner_installation_remains_accessible(): void
+    {
+        config(['office-agent.enabled' => false]);
         $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
     }
-    public function test_connection_marker_enables_licensing_without_rebuilding_cached_configuration(): void {
-        config(['office-agent.enabled'=>false]);
-        $this->state['access']='locked';$this->writeState();
+
+    public function test_connection_marker_enables_licensing_without_rebuilding_cached_configuration(): void
+    {
+        config(['office-agent.enabled' => false]);
+        $this->state['access'] = 'locked';
+        $this->writeState();
         $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
         file_put_contents($this->dir.'/enabled', 'office-helper/v2');
         $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
     }
-    public function test_control_identity_can_be_added_after_office_configuration_was_cached(): void {
-        config(['office-agent.control_token'=>'', 'office-agent.control_token_file'=>$this->dir.'/token']);
-        file_put_contents($this->dir.'/token', str_repeat('a',64));
+
+    public function test_control_identity_can_be_added_after_office_configuration_was_cached(): void
+    {
+        config(['office-agent.control_token' => '', 'office-agent.control_token_file' => $this->dir.'/token']);
+        file_put_contents($this->dir.'/token', str_repeat('a', 64));
         $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
         unlink($this->dir.'/token');
         $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
     }
-    public function test_business_api_is_locked_but_login_remains_accessible(): void {
-        $this->state['access']='locked';$this->writeState();
-        $this->getJson('/api/v1/projects')->assertStatus(423)->assertJsonPath('code','OFFICE_LICENSE_LOCKED');
+
+    public function test_business_api_is_locked_but_login_remains_accessible(): void
+    {
+        $this->state['access'] = 'locked';
+        $this->writeState();
+        $this->getJson('/api/v1/projects')->assertStatus(423)->assertJsonPath('code', 'OFFICE_LICENSE_LOCKED');
         $this->get('/login')->assertOk();
     }
-    public function test_system_update_page_uses_office_layout_and_readonly_signed_lifetime_license(): void {
-        $this->state['license']=['id'=>'license-fixture','display_key'=>'OFF-TEST••••','activated_at'=>'2026-10-09T08:00:00Z','expires_at'=>null,'customer'=>'مشتری آزمایشی'];$this->writeState();
-        $user=\App\Models\User::factory()->make(['id'=>1,'role'=>'admin','is_active'=>true]);
-        $this->actingAs($user)->get('/settings/system-update')->assertOk()->assertSee('بروزرسانی سامانه')->assertSee('لایسنس مادام العمر')->assertSee('license-fixture')->assertSee('readonly',false)->assertSee('app-theme');
+
+    public function test_system_update_page_uses_office_layout_and_readonly_signed_lifetime_license(): void
+    {
+        $this->state['license'] = ['id' => 'license-fixture', 'display_key' => 'OFF-TEST-AAAA-BBBB-CCCC', 'activated_at' => '2026-10-09T08:00:00Z', 'expires_at' => null, 'customer' => 'مشتری آزمایشی'];
+        $this->writeState();
+        $user = User::factory()->make(['id' => 1, 'role' => 'admin', 'is_active' => true]);
+        $this->actingAs($user)->get('/settings/system-update')->assertOk()->assertSee('بروزرسانی سامانه')->assertSee('لایسنس مادام العمر')->assertDontSee('license-fixture')->assertSee('OFF-TEST-AAAA-BBBB-CCCC')->assertDontSee('فقط خواندنی')->assertDontSee('متصل به مرکز')->assertSee('readonly', false)->assertSee('app-theme')->assertSee('officeUpdateConfirm')->assertSee('checkProgressTrack')->assertHeader('Cache-Control', 'no-store, private');
     }
-    public function test_update_routes_are_restricted_to_administrator(): void {
-        $user=\App\Models\User::factory()->make(['id'=>1,'role'=>'employee','is_active'=>true]);
-        $this->actingAs($user)->get('/settings/system-update')->assertForbidden();
-        $this->postJson('/settings/system-update/check')->assertForbidden();
-        $this->postJson('/settings/system-update/install')->assertForbidden();
-        $this->getJson('/settings/system-update/status')->assertForbidden();
+
+    public function test_update_routes_are_restricted_to_administrator(): void
+    {
+        foreach (['employee', 'manager', 'supervisor'] as $id => $role) {
+            $user = User::factory()->make(['id' => $id + 10, 'role' => $role, 'is_active' => true]);
+            $this->actingAs($user)->get('/settings/system-update')->assertForbidden();
+            $this->postJson('/settings/system-update/check')->assertForbidden();
+            $this->postJson('/settings/system-update/install')->assertForbidden();
+            $this->getJson('/settings/system-update/status')->assertForbidden();
+            $this->post('/license/reactivate', ['license_key' => 'OFF-TEST-AAAA-BBBB-CCCC'])->assertForbidden();
+        }
     }
-    public function test_maintenance_blocks_business_but_preserves_login_and_admin_status_endpoint(): void {
-        file_put_contents($this->dir.'/update.json',json_encode(['status'=>'error','stage'=>'migration','maintenance'=>true,'error'=>'SQLSTATE fixture']));
-        $this->getJson('/api/v1/projects')->assertStatus(503)->assertJsonPath('code','OFFICE_UPDATE_MAINTENANCE');
+
+    public function test_general_manager_can_check_confirm_update_and_reactivate(): void
+    {
+        $user = User::factory()->make(['id' => 2, 'role' => 'general_manager', 'is_active' => true]);
+        $this->actingAs($user)->get('/settings/system-update')->assertOk();
+        $this->postJson('/settings/system-update/check')->assertOk()->assertJsonPath('update.version', '3.8.23');
+        $this->postJson('/settings/system-update/install')->assertUnprocessable();
+        $confirmation = ['expected_version' => '3.8.23', 'expected_release_id' => 'b80a7eb6-8d49-4f42-b3ed-16e3a916b57e'];
+        $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(202)->assertJsonPath('status', 'running');
+        $requests = array_map(fn ($line) => json_decode($line, true), file($this->dir.'/requests', FILE_IGNORE_NEW_LINES));
+        $updates = array_values(array_filter($requests, fn ($request) => $request['path'] === '/update'));
+        $this->assertSame($confirmation, $updates[0]['body']);
+        $this->getJson('/settings/system-update/status')->assertOk();
+        $this->state['access'] = 'locked';
+        $this->writeState();
+        $this->get('/license')->assertOk()->assertSee('واحد فروش یا نماینده فنی خود')->assertSee('license_key')->assertSee('app-theme');
+        $this->post('/license/reactivate', ['license_key' => 'OFF-TEST-AAAA-BBBB-CCCC'])->assertRedirect('/');
+    }
+
+    public function test_old_helper_cannot_start_unpinned_update(): void
+    {
+        file_put_contents($this->dir.'/old-helper', '1');
+        $user = User::factory()->make(['id' => 3, 'role' => 'admin', 'is_active' => true]);
+        $this->actingAs($user)->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])->assertStatus(502)->assertSee('HELPER_UPGRADE_REQUIRED');
+        $this->assertStringNotContainsString('"path":"\/update"', file_get_contents($this->dir.'/requests'));
+    }
+
+    public function test_settings_tile_is_visible_only_to_the_two_administrator_roles(): void
+    {
+        $backup = \Mockery::mock(BackupManager::class);
+        $backup->shouldReceive('dashboardStatus')->andReturn([]);
+        foreach (['admin', 'general_manager', 'supervisor'] as $role) {
+            $user = User::factory()->make(['id' => 50, 'role' => $role, 'is_active' => true]);
+            $request = Request::create('/settings');
+            $request->setUserResolver(fn () => $user);
+            $view = app(SettingsController::class)($request, $backup);
+            $item = $view->getData()['settingsItems']->firstWhere('title', 'بروزرسانی سامانه');
+            if ($role === 'supervisor') {
+                $this->assertNull($item);
+            } else {
+                $this->assertNotNull($item);
+                $this->assertStringNotContainsString('مرکز', $item['description']);
+            }
+        }
+    }
+
+    public function test_guest_lock_uses_office_assets_and_does_not_expose_activation_form(): void
+    {
+        $this->state['access'] = 'locked';
+        $this->writeState();
+        $this->get('/projects')->assertStatus(423)->assertSee('واحد فروش یا نماینده فنی خود')->assertSee('vendor/vazirmatn/vazirmatn.css')->assertSee('app-theme')->assertDontSee('name="license_key"', false)->assertSee('اطلاعات، فایل‌ها و دیتابیس شما حفظ شده‌اند.');
+    }
+
+    public function test_maintenance_blocks_business_but_preserves_login_and_admin_status_endpoint(): void
+    {
+        file_put_contents($this->dir.'/update.json', json_encode(['status' => 'error', 'stage' => 'migration', 'maintenance' => true, 'error' => 'SQLSTATE fixture']));
+        $this->getJson('/api/v1/projects')->assertStatus(503)->assertJsonPath('code', 'OFFICE_UPDATE_MAINTENANCE');
         $this->get('/login')->assertOk();
-        $user=\App\Models\User::factory()->make(['id'=>1,'role'=>'admin','is_active'=>true]);
-        $this->actingAs($user)->getJson('/settings/system-update/status')->assertOk()->assertJsonPath('error','SQLSTATE fixture');
+        $user = User::factory()->make(['id' => 1, 'role' => 'admin', 'is_active' => true]);
+        $this->actingAs($user)->getJson('/settings/system-update/status')->assertOk()->assertJsonPath('error', 'SQLSTATE fixture');
     }
 }

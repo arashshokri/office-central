@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0-rc.9
+
+- Match Office license, activation and maintenance screens to its existing theme and local assets.
+- Restrict license and update controls to system administrators and general managers, including server endpoints.
+- Show recoverable full license codes in signed customer metadata; leave legacy hash-only codes empty for administrator replacement.
+- Add update-check activity progress, current/target version comparison and explicit confirmation before installation.
+- Pin the approved version and release through authorization and execution; reject changed offers and unsupported older helpers without touching customer data.
+
+## 1.4.0-rc.8
+
+- Add customer, product and release editing and safe deletion; revoke deleted licenses while preserving installation history.
+- Store new license codes encrypted for authorized retrieval and offer replacement for older hash-only codes.
+- Simplify repository connection and refresh user management screens.
+
 ## 1.4.0-rc.7
 
 - Snapshot the accepted update response before starting the background worker, avoiding concurrent reads of mutable job progress.

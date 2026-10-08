@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -158,7 +159,7 @@ func (c *Client) confirmDeployment(p Package, h Hardware) error {
 	}
 	return os.Remove(path)
 }
-func (c *Client) performUpdate(job *UpdateJob, h Hardware) (err error) {
+func (c *Client) performUpdate(job *UpdateJob, h Hardware, confirmation UpdateConfirmation) (err error) {
 	defer func() {
 		job.FinishedAt = time.Now().UTC().Format(time.RFC3339)
 		if err != nil {
@@ -180,6 +181,9 @@ func (c *Client) performUpdate(job *UpdateJob, h Hardware) (err error) {
 		var receipt updateReceipt
 		if json.Unmarshal(raw, &receipt) != nil || receipt.Installation != c.Identity.Installation {
 			return errors.New("invalid pending update receipt")
+		}
+		if !confirmation.matches(State{Package: receipt.Package}) {
+			return errors.New("UPDATE_OFFER_CHANGED: نسخهٔ تأییدشده با نصب در انتظار ثبت نتیجه مطابقت ندارد؛ دوباره وضعیت را بررسی کنید")
 		}
 		fp, _ := h.fingerprint()
 		bound, _ := receipt.Hardware.fingerprint()
@@ -207,6 +211,9 @@ func (c *Client) performUpdate(job *UpdateJob, h Hardware) (err error) {
 	if !state.Update.Available || state.Package.Release != state.Update.Release {
 		return errors.New("UPDATE_NOT_AUTHORIZED: نسخهٔ جدیدتری برای این لایسنس باز نشده است")
 	}
+	if !confirmation.matches(state) {
+		return errors.New("UPDATE_OFFER_CHANGED: نسخهٔ مجاز تغییر کرده است؛ دوباره بروزرسانی را بررسی و نسخهٔ جدید را تأیید کنید")
+	}
 	job.Version = state.Package.Version
 	profile, e := c.existingOffice()
 	if e != nil {
@@ -227,6 +234,17 @@ func writeControlJSON(w http.ResponseWriter, status int, value any) {
 	w.WriteHeader(status)
 	w.Write(raw)
 }
+
+type UpdateConfirmation struct {
+	Version string `json:"expected_version"`
+	Release string `json:"expected_release_id"`
+}
+
+func (confirmation UpdateConfirmation) matches(state State) bool {
+	return (confirmation.Version == "" || confirmation.Version == state.Package.Version) &&
+		(confirmation.Release == "" || confirmation.Release == state.Package.Release)
+}
+
 func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.Mutex, enforce func(State)) bool {
 	if r.URL.Path != "/check-update" && r.URL.Path != "/update" && r.URL.Path != "/update-status" {
 		return false
@@ -238,6 +256,14 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 	if job := c.updateJob(); job.Status == "running" {
 		writeControlJSON(w, 202, job)
 		return true
+	}
+	var confirmation UpdateConfirmation
+	if r.URL.Path == "/update" {
+		err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&confirmation)
+		if err != nil && err != io.EOF {
+			writeControlJSON(w, 422, map[string]string{"message": "UPDATE_CONFIRMATION_INVALID: تأیید نسخه معتبر نیست؛ دوباره بروزرسانی را بررسی کنید."})
+			return true
+		}
 	}
 	mu.Lock()
 	h, err := hardware()
@@ -254,7 +280,12 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 	}
 	if r.URL.Path == "/check-update" {
 		mu.Unlock()
-		writeControlJSON(w, 200, map[string]any{"update": state.Update, "installed_version": installed, "checked_at": time.Now().UTC().Format(time.RFC3339)})
+		writeControlJSON(w, 200, map[string]any{"update": state.Update, "installed_version": installed, "confirmation_supported": true, "checked_at": time.Now().UTC().Format(time.RFC3339)})
+		return true
+	}
+	if !confirmation.matches(state) {
+		mu.Unlock()
+		writeControlJSON(w, 409, map[string]string{"message": "UPDATE_OFFER_CHANGED: نسخهٔ مجاز تغییر کرده است؛ دوباره بروزرسانی را بررسی و نسخهٔ جدید را تأیید کنید."})
 		return true
 	}
 	old := c.updateJob()
@@ -278,9 +309,10 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 	// The accepted operation owns the mutex before its response is sent. No
 	// second request can queue a duplicate migration or race signed sequences.
 	accepted := job
+	confirmation = UpdateConfirmation{Version: state.Package.Version, Release: state.Package.Release}
 	go func() {
 		defer mu.Unlock()
-		if e := c.performUpdate(&job, h); e != nil {
+		if e := c.performUpdate(&job, h, confirmation); e != nil {
 			fmt.Fprintln(os.Stderr, "Office update:", safeUpdateError(e))
 		}
 		if s, e := c.poll(h); e == nil {

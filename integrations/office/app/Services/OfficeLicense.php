@@ -12,8 +12,10 @@ final class OfficeLicense
 
     public function decision(): array
     {
-        if (! $this->enabled()) { return ['allowed' => true, 'message' => null]; }
-        $message = 'این سامانه غیرفعال شده است. برای فعال‌سازی و تهیه لایسنس جدید با واحد فروش یا نماینده فروش تماس بگیرید.';
+        if (! $this->enabled()) {
+            return ['allowed' => true, 'message' => null];
+        }
+        $message = 'این سامانه غیرفعال شده است. برای فعال‌سازی با واحد فروش یا نماینده فنی خود در ارتباط باشید.';
         try {
             $dir = config('office-agent.state_dir');
             $trust = json_decode(file_get_contents($dir.'/trust.json'), true, 8, JSON_THROW_ON_ERROR);
@@ -40,6 +42,7 @@ final class OfficeLicense
                 && ($state['installation_id'] ?? '') === $trust['installation_id']
                 && hash_equals($state['hardware_fingerprint'] ?? '', $fingerprint)
                 && hash_equals($state['presented_fingerprint'] ?? '', $fingerprint);
+
             return ['allowed' => $bound && ($state['completed'] ?? false) && ($state['access'] ?? '') === 'allowed',
                 'message' => $state['message'] ?? $message];
         } catch (\Throwable $error) {
@@ -59,42 +62,81 @@ final class OfficeLicense
             $trust = json_decode(file_get_contents($dir.'/trust.json'), true, 8, JSON_THROW_ON_ERROR);
             $envelope = json_decode(file_get_contents($dir.'/state.json'), true, 8, JSON_THROW_ON_ERROR);
             $raw = $this->decode($envelope['payload']);
-            if (($envelope['algorithm'] ?? '') !== 'Ed25519' || ! sodium_crypto_sign_verify_detached($this->decode($envelope['signature']), "office-agent/v2\n".$raw, $this->decode($trust['public_key']))) { return []; }
+            if (($envelope['algorithm'] ?? '') !== 'Ed25519' || ! sodium_crypto_sign_verify_detached($this->decode($envelope['signature']), "office-agent/v2\n".$raw, $this->decode($trust['public_key']))) {
+                return [];
+            }
             $state = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
-            if (($state['installation_id'] ?? '') !== $trust['installation_id'] || ($state['kind'] ?? '') !== 'state' || ($state['protocol'] ?? 0) !== 2 || ($state['product'] ?? '') !== 'office') { return []; }
+            if (($state['installation_id'] ?? '') !== $trust['installation_id'] || ($state['kind'] ?? '') !== 'state' || ($state['protocol'] ?? 0) !== 2 || ($state['product'] ?? '') !== 'office') {
+                return [];
+            }
+
             return $state;
-        } catch (\Throwable) { return []; }
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     public function updateStatus(): array
     {
         $path = config('office-agent.state_dir').'/update.json';
-        if (! is_readable($path)) { return []; }
-        try { return json_decode(file_get_contents($path), true, 16, JSON_THROW_ON_ERROR) ?: []; }
-        catch (\Throwable) { return []; }
+        if (! is_readable($path)) {
+            return [];
+        }
+        try {
+            return json_decode(file_get_contents($path), true, 16, JSON_THROW_ON_ERROR) ?: [];
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
-    public function maintenance(): bool { return (bool) ($this->updateStatus()['maintenance'] ?? false); }
-    public function checkUpdates(): array { return $this->control('/check-update', [], 60); }
-    public function startUpdate(): array { return $this->control('/update', [], 60); }
+    public function maintenance(): bool
+    {
+        return (bool) ($this->updateStatus()['maintenance'] ?? false);
+    }
+
+    public function checkUpdates(): array
+    {
+        return $this->control('/check-update', [], 60);
+    }
+
+    public function startUpdate(array $confirmation): array
+    {
+        $checked = $this->checkUpdates();
+        if (($checked['status'] ?? '') === 'running') {
+            return $checked;
+        }
+        if (($checked['confirmation_supported'] ?? false) !== true) {
+            throw new \RuntimeException('HELPER_UPGRADE_REQUIRED: سرویس بروزرسانی باید توسط مدیر سرور به‌روز شود. با نماینده فنی خود در ارتباط باشید.');
+        }
+
+        return $this->control('/update', $confirmation, 60);
+    }
 
     private function control(string $path, array $data, int $timeout): array
     {
         $connection = @stream_socket_client('unix://'.config('office-agent.socket'), $errno, $error, 5);
-        if (! $connection) { throw new \RuntimeException('سرویس فعال‌سازی در دسترس نیست.'); }
+        if (! $connection) {
+            throw new \RuntimeException('سرویس فعال‌سازی در دسترس نیست.');
+        }
         try {
             stream_set_timeout($connection, $timeout);
             $body = json_encode($data, JSON_THROW_ON_ERROR);
             $token = config('office-agent.control_token');
             $tokenFile = config('office-agent.control_token_file');
-            if ($tokenFile && is_readable($tokenFile)) { $token = trim(file_get_contents($tokenFile)); }
-            if (! preg_match('/^[a-f0-9]{64}$/D', $token)) { throw new \RuntimeException('Invalid helper control identity.'); }
-            $request = "POST ".$path." HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer ".$token
+            if ($tokenFile && is_readable($tokenFile)) {
+                $token = trim(file_get_contents($tokenFile));
+            }
+            if (! preg_match('/^[a-f0-9]{64}$/D', $token)) {
+                throw new \RuntimeException('Invalid helper control identity.');
+            }
+            $request = 'POST '.$path." HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer ".$token
                 ."\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: ".strlen($body)."\r\n\r\n".$body;
             $offset = 0;
             while ($offset < strlen($request)) {
                 $written = fwrite($connection, substr($request, $offset));
-                if (! $written) { throw new \RuntimeException('Helper connection failed.'); }
+                if (! $written) {
+                    throw new \RuntimeException('Helper connection failed.');
+                }
                 $offset += $written;
             }
             $response = stream_get_contents($connection, 65536);
@@ -102,12 +144,19 @@ final class OfficeLicense
             $body = explode("\r\n\r\n", $response, 2)[1] ?? '';
             $data = json_decode($body, true);
             if (! in_array((int) ($status[1] ?? 0), [200, 202], true)) {
-                if (($status[1] ?? '') === '404') { throw new \RuntimeException('HELPER_UPGRADE_REQUIRED: نسخهٔ helper قدیمی است؛ مدیر سرور فرمان نصب و اتصال helper را دوباره اجرا کند.'); }
+                if (($status[1] ?? '') === '404') {
+                    throw new \RuntimeException('HELPER_UPGRADE_REQUIRED: نسخهٔ helper قدیمی است؛ مدیر سرور فرمان نصب و اتصال helper را دوباره اجرا کند.');
+                }
                 throw new \RuntimeException($data['message'] ?? 'HELPER_REQUEST_FAILED: درخواست انجام نشد؛ اتصال helper به مرکز و لاگ سرویس را بررسی کنید.');
             }
-            if (! is_array($data)) { throw new \RuntimeException('HELPER_RESPONSE_INVALID: پاسخ سرویس قابل خواندن نیست.'); }
+            if (! is_array($data)) {
+                throw new \RuntimeException('HELPER_RESPONSE_INVALID: پاسخ سرویس قابل خواندن نیست.');
+            }
+
             return $data;
-        } finally { fclose($connection); }
+        } finally {
+            fclose($connection);
+        }
     }
 
     private function decode(string $value): string

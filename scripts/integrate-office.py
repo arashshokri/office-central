@@ -16,7 +16,7 @@ def copy_managed(file,dest):
     dest.parent.mkdir(parents=True,exist_ok=True)
     if dest.exists() and dest.read_bytes()!=file.read_bytes() and not args.update:raise SystemExit('Existing integration file differs: '+str(dest))
     if file.resolve()!=dest.resolve():shutil.copy2(file,dest)
-for folder in ['app','config','resources','tests','docs','.github']:
+for folder in ['app','config','resources','public','tests','docs','.github']:
     for file in (source/folder).rglob('*'):
         if file.is_file():
             copy_managed(file,office/file.relative_to(source))
@@ -110,8 +110,10 @@ settings=office/'app/Http/Controllers/SettingsController.php';text=settings.read
 if "route('settings.system-update')" not in text:
     anchor="        ])->where('visible', true)->values();"
     if anchor not in text:raise SystemExit('Office settings controller anchor is missing.')
-    entry="            [\n                'title' => 'بروزرسانی سامانه',\n                'description' => 'وضعیت لایسنس، اعتبار و دریافت نسخه‌های مجاز از مرکز',\n                'icon' => 'fa-arrows-rotate',\n                'route' => route('settings.system-update'),\n                'visible' => $user->isAdmin(),\n            ],\n"
+    entry="            [\n                'title' => 'بروزرسانی سامانه',\n                'description' => 'وضعیت لایسنس، اعتبار و دریافت نسخه‌های مجاز',\n                'icon' => 'fa-arrows-rotate',\n                'route' => route('settings.system-update'),\n                'visible' => $user->isAdmin(),\n            ],\n"
     settings.write_text(text.replace(anchor,entry+anchor),encoding='utf-8',newline='\n')
+elif args.update:
+    settings.write_text(text.replace('وضعیت لایسنس، اعتبار و دریافت نسخه‌های مجاز از مرکز','وضعیت لایسنس، اعتبار و دریافت نسخه‌های مجاز'),encoding='utf-8',newline='\n')
 console=office/'routes/console.php';text=console.read_text(encoding='utf-8')
 text=text.replace("app(\\App\\Services\\OfficeLicense::class)->decision()['allowed']);", "app(\\App\\Services\\OfficeLicense::class)->decision()['allowed'] && !app(\\App\\Services\\OfficeLicense::class)->maintenance());")
 console.write_text(text,encoding='utf-8',newline='\n')

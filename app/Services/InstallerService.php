@@ -146,7 +146,7 @@ final class InstallerService
                 'completed' => $installation->completed_at !== null,
                 'activation_mode' => $license->activation_mode,
                 'application_version' => $installation->application_version,
-                'license' => ['id' => $license->uuid, 'display_key' => $license->license_key_prefix.'••••',
+                'license' => ['id' => $license->uuid, 'display_key' => $license->license_key_encrypted,
                     'activated_at' => $installation->activated_at?->toISOString(), 'expires_at' => $license->expires_at?->toISOString(),
                     'status' => $license->status->value, 'customer' => $license->customer?->name],
                 'update' => ['available' => $access === 'allowed' && $update !== null, 'release_id' => $update?->uuid,

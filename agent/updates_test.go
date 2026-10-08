@@ -11,8 +11,40 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestUpdateConfirmationPinsVersionAndRelease(t *testing.T) {
+	state := State{Package: Package{Version: "3.8.23", Release: "release-a"}}
+	for _, row := range []struct {
+		confirmation UpdateConfirmation
+		want         bool
+	}{
+		{UpdateConfirmation{Version: "3.8.23", Release: "release-a"}, true},
+		{UpdateConfirmation{Version: "3.8.22", Release: "release-a"}, false},
+		{UpdateConfirmation{Version: "3.8.23", Release: "release-b"}, false},
+		{UpdateConfirmation{Version: "3.8.23"}, true},
+		{UpdateConfirmation{}, true}, // Existing CLI clients retain their behavior.
+	} {
+		if row.confirmation.matches(state) != row.want {
+			t.Fatal(row)
+		}
+	}
+}
+
+func TestMalformedUpdateConfirmationDoesNotStartWork(t *testing.T) {
+	c := &Client{Root: t.TempDir()}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/update", strings.NewReader(`{"expected_version":42}`))
+	c.handleUpdates(w, r, &sync.Mutex{}, func(State) { t.Fatal("unexpected enforcement") })
+	if w.Code != 422 || !strings.Contains(w.Body.String(), "UPDATE_CONFIRMATION_INVALID") {
+		t.Fatal(w.Code, w.Body)
+	}
+	if job := c.updateJob(); job.Status != "" {
+		t.Fatal("unexpected job", job)
+	}
+}
 
 func TestUpdateSemVerAndSafeErrors(t *testing.T) {
 	for _, row := range []struct {
@@ -178,7 +210,7 @@ func TestPendingConfirmationDoesNotRepeatMigrationOrBackup(t *testing.T) {
 	if err := atomicJSON(filepath.Join(c.Root, "agent/private/update-receipt.json"), updateReceipt{c.Identity.Installation, h, state.Package}, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.performUpdate(job, h); err != nil {
+	if err := c.performUpdate(job, h, UpdateConfirmation{Version: state.Package.Version, Release: state.Package.Release}); err != nil {
 		t.Fatal(err)
 	}
 	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
@@ -189,5 +221,20 @@ func TestPendingConfirmationDoesNotRepeatMigrationOrBackup(t *testing.T) {
 	}
 	if job.Status != "success" || job.Maintenance {
 		t.Fatal("completion not recovered", job)
+	}
+}
+
+func TestPendingConfirmationRejectsDifferentApprovedVersionWithoutTouchingData(t *testing.T) {
+	c, state, h, job := existingUpdateFixture(t)
+	if err := atomicJSON(filepath.Join(c.Root, "agent/private/update-receipt.json"), updateReceipt{c.Identity.Installation, h, state.Package}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := c.performUpdate(job, h, UpdateConfirmation{Version: "3.8.23"})
+	if err == nil || !strings.Contains(err.Error(), "UPDATE_OFFER_CHANGED") {
+		t.Fatal(err)
+	}
+	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
+	if len(commands) != 0 {
+		t.Fatal("unexpected Docker operation", string(commands))
 	}
 }
