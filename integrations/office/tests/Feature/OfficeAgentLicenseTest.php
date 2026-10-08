@@ -98,4 +98,23 @@ PHP;
         $this->getJson('/api/v1/projects')->assertStatus(423)->assertJsonPath('code','OFFICE_LICENSE_LOCKED');
         $this->get('/login')->assertOk();
     }
+    public function test_system_update_page_uses_office_layout_and_readonly_signed_lifetime_license(): void {
+        $this->state['license']=['id'=>'license-fixture','display_key'=>'OFF-TEST••••','activated_at'=>'2026-10-09T08:00:00Z','expires_at'=>null,'customer'=>'مشتری آزمایشی'];$this->writeState();
+        $user=\App\Models\User::factory()->make(['id'=>1,'role'=>'admin','is_active'=>true]);
+        $this->actingAs($user)->get('/settings/system-update')->assertOk()->assertSee('بروزرسانی سامانه')->assertSee('لایسنس مادام العمر')->assertSee('license-fixture')->assertSee('readonly',false)->assertSee('app-theme');
+    }
+    public function test_update_routes_are_restricted_to_administrator(): void {
+        $user=\App\Models\User::factory()->make(['id'=>1,'role'=>'employee','is_active'=>true]);
+        $this->actingAs($user)->get('/settings/system-update')->assertForbidden();
+        $this->postJson('/settings/system-update/check')->assertForbidden();
+        $this->postJson('/settings/system-update/install')->assertForbidden();
+        $this->getJson('/settings/system-update/status')->assertForbidden();
+    }
+    public function test_maintenance_blocks_business_but_preserves_login_and_admin_status_endpoint(): void {
+        file_put_contents($this->dir.'/update.json',json_encode(['status'=>'error','stage'=>'migration','maintenance'=>true,'error'=>'SQLSTATE fixture']));
+        $this->getJson('/api/v1/projects')->assertStatus(503)->assertJsonPath('code','OFFICE_UPDATE_MAINTENANCE');
+        $this->get('/login')->assertOk();
+        $user=\App\Models\User::factory()->make(['id'=>1,'role'=>'admin','is_active'=>true]);
+        $this->actingAs($user)->getJson('/settings/system-update/status')->assertOk()->assertJsonPath('error','SQLSTATE fixture');
+    }
 }

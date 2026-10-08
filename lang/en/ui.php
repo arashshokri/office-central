@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'security_update' => 'Security update',
+    'customer_update_permission' => 'Customer update permission',
+    'customer_update_help' => 'Only the selected release can be downloaded and installed by this customer from Office.',
+    'allowed_update_version' => 'Authorized update release',
+    'no_update_permission' => 'No new update authorized',
+    'update_requires_runtime' => 'Select a published Docker runtime belonging to this product.',
+    'navigation' => 'Central management',
+    'workspace' => 'Workspace',
+    'role_admin' => 'Administrator',
+    'role_super_admin' => 'Super administrator',
+    'role_viewer' => 'Viewer',
+    'toggle_sidebar' => 'Toggle navigation',
+
     'attach_once' => 'Connect existing Office (recommended)',
     'helper_simple_help' => 'Office already installed? Keep the default. The helper detects it and activates its license without reinstalling or requiring an encoded package.',
     'existing_version_optional' => 'Current installation — no version restriction',

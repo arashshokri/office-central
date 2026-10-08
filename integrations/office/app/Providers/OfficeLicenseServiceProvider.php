@@ -22,12 +22,19 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
             $kernel = $this->app->make(\Illuminate\Contracts\Http\Kernel::class);
             $kernel->prependMiddleware(OfficeLicenseGate::class);
             // Pause job acquisition without deleting queued jobs.
-            Queue::looping(fn () => app(OfficeLicense::class)->decision()['allowed']);
+            Queue::looping(fn () => app(OfficeLicense::class)->decision()['allowed'] && ! app(OfficeLicense::class)->maintenance());
         });
 
         Route::middleware('web')->group(function () {
+            Route::middleware('auth')->group(function () {
+                Route::get('/settings/system-update', [\App\Http\Controllers\OfficeUpdateController::class, 'index'])->name('settings.system-update');
+                Route::post('/settings/system-update/check', [\App\Http\Controllers\OfficeUpdateController::class, 'check'])->middleware('throttle:6,1')->name('settings.system-update.check');
+                Route::post('/settings/system-update/install', [\App\Http\Controllers\OfficeUpdateController::class, 'update'])->middleware('throttle:3,1')->name('settings.system-update.install');
+                Route::get('/settings/system-update/status', [\App\Http\Controllers\OfficeUpdateController::class, 'status'])->middleware('throttle:60,1')->name('settings.system-update.status');
+            });
             Route::get('/internal/license/access', fn () => response('', 204));
             Route::get('/license', function () {
+                if (app(OfficeLicense::class)->decision()['allowed'] && auth()->user()?->role === 'admin') { return redirect()->route('settings.system-update'); }
                 return view('office-agent.locked', array_merge(app(OfficeLicense::class)->decision(),
                     ['helperEnabled' => app(OfficeLicense::class)->enabled()]));
             })->middleware('auth')->name('office-agent.license');

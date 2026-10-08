@@ -5,18 +5,28 @@ document.addEventListener('DOMContentLoaded', () => {
         menuButton?.setAttribute('aria-expanded', 'false');
     };
     menuButton?.addEventListener('click', () => {
+        if (window.matchMedia('(min-width: 761px)').matches) {
+            const collapsed = document.body.classList.toggle('sidebar-collapsed');
+            menuButton.setAttribute('aria-expanded', String(!collapsed));
+            try { localStorage.setItem('central-sidebar-collapsed', String(collapsed)); } catch {}
+            return;
+        }
         const open = document.body.classList.toggle('open');
         menuButton.setAttribute('aria-expanded', String(open));
     });
     document.querySelector('[data-menu-close]')?.addEventListener('click', closeMenu);
     document.querySelectorAll('aside nav a').forEach(link => link.addEventListener('click', closeMenu));
 
-    const storedTheme = localStorage.getItem('central-theme');
+    let storedTheme;
+    try {
+        storedTheme = localStorage.getItem('central-theme');
+        document.body.classList.toggle('sidebar-collapsed', localStorage.getItem('central-sidebar-collapsed') === 'true');
+    } catch {}
     if (storedTheme) document.documentElement.dataset.theme = storedTheme;
     document.querySelector('[data-theme-toggle]')?.addEventListener('click', () => {
         const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
         document.documentElement.dataset.theme = next;
-        localStorage.setItem('central-theme', next);
+        try { localStorage.setItem('central-theme', next); } catch {}
     });
 
     document.querySelectorAll('[data-copy-target]').forEach(button => button.addEventListener('click', async () => {

@@ -147,4 +147,39 @@ class InstallerProtocolTest extends TestCase
         $this->assertDatabaseCount('installations', 0);
         $this->assertNull($license->fresh()->consumed_at);
     }
+
+    public function test_attached_customer_gets_only_authorized_security_update_and_confirms_it_idempotently(): void
+    {
+        $license=$this->license();$license->update(['activation_mode'=>'attach_once','release_id'=>null,'expires_at'=>now()->addYear()]);
+        $body=$this->activation();$body['intent']='connect';$data=$this->signed('begin',$body)->assertOk()->json('data');
+        $this->signed('complete',['hardware'=>$this->hardware,'application_version'=>'3.8.20','health_ok'=>true],$data['credential'])->assertOk();
+        $state=$this->payload($this->signed('state',['hardware'=>$this->hardware],$data['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertSame($license->uuid,$state['license']['id']);$this->assertNotNull($state['license']['activated_at']);
+        $this->assertNotNull($state['license']['expires_at']);$this->assertFalse($state['update']['available']);
+        $this->assertStringNotContainsString('OFF-AAAA-BBBB-CCCC-DDDD',json_encode($state));
+        $release=Release::create(['product_id'=>$license->product_id,'version'=>'3.8.21','channel'=>'stable','is_security'=>true,'status'=>'published',
+            'source_type'=>'manual','package_path'=>'security.zip','package_size'=>100,'package_sha256'=>str_repeat('b',64),'runtime_manifest'=>['format'=>'office-runtime-v1'],'release_notes'=>'Security fix']);
+        $this->signed('download',['hardware'=>$this->hardware,'release_id'=>$release->uuid],$data['credential'])->assertForbidden();
+        $license->update(['update_release_id'=>$release->id]);
+        $state=$this->payload($this->signed('state',['hardware'=>$this->hardware],$data['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertTrue($state['update']['available']);$this->assertTrue($state['update']['security']);$this->assertSame('3.8.21',$state['update']['version']);
+        $this->signed('download',['hardware'=>$this->hardware,'release_id'=>$release->uuid],$data['credential'])->assertOk();
+        $bad=$this->receipt($release);$bad['package_sha256']=str_repeat('c',64);
+        $this->signed('complete',$bad,$data['credential'])->assertUnprocessable();$this->assertSame('3.8.20',Installation::first()->application_version);
+        $this->signed('complete',$this->receipt($release),$data['credential'])->assertOk();
+        $this->signed('complete',$this->receipt($release),$data['credential'])->assertOk();
+        $this->assertSame('3.8.21',Installation::first()->application_version);
+        $state=$this->payload($this->signed('state',['hardware'=>$this->hardware],$data['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertFalse($state['update']['available']);$this->assertDatabaseCount('installations',1);
+        $license->update(['update_release_id'=>null]);
+        $next=Release::create(['product_id'=>$license->product_id,'version'=>'3.8.22','channel'=>'stable','status'=>'published','source_type'=>'manual',
+            'package_path'=>'next.zip','package_size'=>100,'package_sha256'=>str_repeat('c',64),'runtime_manifest'=>['format'=>'office-runtime-v1']]);
+        $this->signed('download',['hardware'=>$this->hardware,'release_id'=>$next->uuid],$data['credential'])->assertForbidden();
+        $license->update(['update_release_id'=>$next->id]);
+        $this->signed('complete',$this->receipt($release),$data['credential'])->assertOk();
+        $this->assertSame('3.8.21',Installation::first()->application_version);
+        $state=$this->payload($this->signed('state',['hardware'=>$this->hardware],$data['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertTrue($state['update']['available']);
+        $this->assertSame('3.8.22',$state['update']['version']);
+    }
 }

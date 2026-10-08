@@ -211,6 +211,17 @@ func execute() error {
 		fmt.Println("Office remains locked; activate a new license at /license or with office-agent reactivate. Customer data is preserved.")
 		return nil
 	}
+	if s.Completed {
+		// Re-running the launcher upgrades the helper itself. It must never
+		// replay installation or replace an existing deployment's DB image.
+		if e = c.health(); e != nil {
+			return e
+		}
+		if e = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN); e != nil {
+			return e
+		}
+		return c.installService(true)
+	}
 	if e = c.deploy(s, h, *adopt); e != nil {
 		return e
 	}
@@ -260,7 +271,7 @@ func (c *Client) local(action, code string) error {
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 65536))
-	if res.StatusCode != 200 {
+	if res.StatusCode != 200 && res.StatusCode != 202 {
 		return fmt.Errorf("helper: %s", raw)
 	}
 	fmt.Println(string(raw))
@@ -309,7 +320,7 @@ func (c *Client) daemon() error {
 		}
 		h, err := hardware()
 		fp, _ := h.fingerprint()
-		allowed := err == nil && s.Access == "allowed" && s.Completed && s.Hardware == fp && s.Presented == fp
+		allowed := err == nil && s.Access == "allowed" && s.Completed && s.Hardware == fp && s.Presented == fp && !c.updateJob().Maintenance
 		action := "stop"
 		if allowed {
 			action = "start"
@@ -333,6 +344,13 @@ func (c *Client) daemon() error {
 		}
 	}
 	var lastDecision string
+	if job := c.updateJob(); job.Status == "running" {
+		job.Status = "error"
+		job.Error = "HELPER_RESTARTED: سرویس هنگام بروزرسانی راه‌اندازی مجدد شد. دوباره بروزرسانی را اجرا کنید؛ بکاپ و داده‌ها حفظ شده‌اند."
+		job.Message = "بروزرسانی نیاز به ادامه دارد."
+		_ = c.saveJob(job)
+		_ = run(nil, "docker", "start", "office-web")
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if r.Method != "POST" || subtle.ConstantTimeCompare([]byte(token), []byte(controlToken)) != 1 {
@@ -358,7 +376,10 @@ func (c *Client) daemon() error {
 			w.Write(raw)
 			return
 		}
-		if r.URL.Path != "/reactivate" && r.URL.Path != "/update" && r.URL.Path != "/connect" {
+		if c.handleUpdates(w, r, &mu, enforce) {
+			return
+		}
+		if r.URL.Path != "/reactivate" && r.URL.Path != "/connect" {
 			http.NotFound(w, r)
 			return
 		}
@@ -387,16 +408,6 @@ func (c *Client) daemon() error {
 					enforce(state)
 					lastDecision = state.Access + state.Hardware + state.Presented
 				}
-			}
-		} else if e == nil {
-			if profile, err := c.existingOffice(); err != nil || profile != nil {
-				http.Error(w, "برای به‌روزرسانی Office موجود از گزینه Update همان نصب استفاده کنید؛ helper نیازی به نصب مجدد برنامه ندارد.", 409)
-				return
-			}
-			var s State
-			s, e = c.poll(h)
-			if e == nil {
-				e = c.deploy(s, h, "")
 			}
 		}
 		if e != nil {

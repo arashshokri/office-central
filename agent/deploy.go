@@ -459,13 +459,7 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 			return e
 		}
 	}
-	var completion struct {
-		Signed Envelope `json:"signed_state"`
-	}
-	if e = c.post("complete", map[string]any{"hardware": h, "release_id": s.Package.Release, "package_sha256": s.Package.SHA, "application_version": s.Package.Version, "health_ok": true}, &completion); e != nil {
-		return e
-	}
-	if _, e = c.accept(completion.Signed, h); e != nil {
+	if e = c.confirmDeployment(s.Package, h); e != nil {
 		return e
 	}
 	fmt.Println("Office installed successfully:", s.Deployment.URL)

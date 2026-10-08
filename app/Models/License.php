@@ -43,6 +43,11 @@ class License extends Model
         return $this->hasMany(Installation::class);
     }
 
+    public function updateRelease()
+    {
+        return $this->belongsTo(Release::class, 'update_release_id');
+    }
+
     public function temporaryLocker()
     {
         return $this->belongsTo(User::class, 'temporary_locked_by');

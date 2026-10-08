@@ -33,6 +33,23 @@ class InstallerAdminWorkflowTest extends TestCase
         $this->get(route('licenses.show', $license))->assertOk()->assertSee(__('ui.attach_preserves_data'));
     }
 
+    public function test_update_permission_is_admin_only_and_cannot_grant_another_product_or_a_source_archive(): void
+    {
+        $admin=User::factory()->create(['role'=>'admin','active'=>true]);$viewer=User::factory()->create(['role'=>'viewer','active'=>true]);
+        $customer=Customer::create(['name'=>'Updates customer','status'=>'active']);$office=Product::create(['name'=>'Office','slug'=>'office','status'=>'active']);
+        $other=Product::create(['name'=>'Other','slug'=>'other','status'=>'active']);
+        $license=License::create(['customer_id'=>$customer->id,'product_id'=>$office->id,'activation_mode'=>'attach_once','license_key_hash'=>hash('sha256','fixture-update'),'license_key_prefix'=>'OFF-TEST','status'=>'active','max_installations'=>1]);
+        $runtime=Release::create(['product_id'=>$office->id,'version'=>'3.8.21','channel'=>'stable','status'=>'published','source_type'=>'manual','runtime_manifest'=>['format'=>'office-runtime-v1']]);
+        $alien=Release::create(['product_id'=>$other->id,'version'=>'3.8.21','channel'=>'stable','status'=>'published','source_type'=>'manual','runtime_manifest'=>['format'=>'office-runtime-v1']]);
+        $source=Release::create(['product_id'=>$office->id,'version'=>'3.8.22','channel'=>'stable','status'=>'published','source_type'=>'manual']);
+        $url=route('licenses.update-release',$license);
+        $this->actingAs($viewer)->put($url,['release_id'=>$runtime->id])->assertForbidden();
+        foreach([$alien,$source] as $invalid){$this->actingAs($admin)->from(route('licenses.show',$license))->put($url,['release_id'=>$invalid->id])->assertSessionHasErrors('release_id');}
+        $this->actingAs($admin)->put($url,['release_id'=>$runtime->id,'expires_at'=>'2099-01-01'])->assertRedirect()->assertSessionHasNoErrors();
+        $this->assertSame($runtime->id,$license->fresh()->update_release_id);$this->assertNull($license->fresh()->expires_at);
+        $this->put($url,['release_id'=>''])->assertRedirect();$this->assertNull($license->fresh()->update_release_id);
+    }
+
     public function test_source_archive_cannot_issue_installer_code_and_returns_actionable_form_error(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'active' => true]);

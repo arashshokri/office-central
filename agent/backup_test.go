@@ -50,7 +50,8 @@ printf '%s\n' "$*" >> "$MOCK_LOG"
 case "$1" in
  inspect) printf 'true\n';;
  exec) printf 'CREATE TABLE fixture(id INT);\n';;
- volume) exit 1;;
+ volume) exit 0;;
+ run) printf 'storage fixture archive';;
 esac
 `
 	os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0700)

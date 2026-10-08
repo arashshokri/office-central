@@ -46,6 +46,7 @@ Route::middleware(['auth', 'role:super_admin,admin'])->group(function () {
     Route::post('/licenses', [LicenseController::class, 'store'])->name('licenses.store');
     Route::post('/releases/{release}/publish', [ReleaseController::class, 'publish'])->name('releases.publish');
     Route::post('/licenses/{license}/status/{status}', [LicenseController::class, 'status'])->name('licenses.status');
+    Route::put('/licenses/{license}/update-release', [LicenseController::class, 'updateRelease'])->name('licenses.update-release');
     Route::post('/licenses/{license}/temporary-lock', [LicenseController::class, 'temporaryLock'])->name('licenses.temporary-lock');
     Route::delete('/licenses/{license}/temporary-lock', [LicenseController::class, 'temporaryUnlock'])->name('licenses.temporary-unlock');
     Route::post('/installations/{installation}/status/{status}', [MonitoringController::class, 'installationStatus'])->name('installations.status');

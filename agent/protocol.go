@@ -66,19 +66,28 @@ type Deployment struct {
 	Proxy string `json:"proxy_network"`
 }
 type State struct {
-	ActivationMode     string     `json:"activation_mode"`
-	ApplicationVersion string     `json:"application_version"`
-	Kind               string     `json:"kind"`
-	Protocol           int        `json:"protocol"`
-	Installation       string     `json:"installation_id"`
-	Sequence           uint64     `json:"sequence"`
-	Hardware           string     `json:"hardware_fingerprint"`
-	Presented          string     `json:"presented_fingerprint"`
-	Access             string     `json:"access"`
-	Completed          bool       `json:"completed"`
-	Message            string     `json:"message"`
-	Deployment         Deployment `json:"deployment"`
-	Package            Package    `json:"package"`
+	License            map[string]any `json:"license"`
+	Update             UpdateOffer    `json:"update"`
+	ActivationMode     string         `json:"activation_mode"`
+	ApplicationVersion string         `json:"application_version"`
+	Kind               string         `json:"kind"`
+	Protocol           int            `json:"protocol"`
+	Installation       string         `json:"installation_id"`
+	Sequence           uint64         `json:"sequence"`
+	Hardware           string         `json:"hardware_fingerprint"`
+	Presented          string         `json:"presented_fingerprint"`
+	Access             string         `json:"access"`
+	Completed          bool           `json:"completed"`
+	Message            string         `json:"message"`
+	Deployment         Deployment     `json:"deployment"`
+	Package            Package        `json:"package"`
+}
+type UpdateOffer struct {
+	Available bool   `json:"available"`
+	Release   string `json:"release_id"`
+	Version   string `json:"version"`
+	Security  bool   `json:"security"`
+	Notes     string `json:"notes"`
 }
 type Identity struct {
 	Endpoint       string

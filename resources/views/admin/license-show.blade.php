@@ -14,6 +14,16 @@
 </section>
 @endif
 
+@if(auth()->user()->role !== 'viewer')
+<section class="panel update-permission">
+    <div class="section-heading"><div><h2>{{ __('ui.customer_update_permission') }}</h2><p>{{ __('ui.customer_update_help') }}</p></div><x-icon name="upload"/></div>
+    <form class="permission-form" method="post" action="{{ route('licenses.update-release', $license) }}">@csrf @method('PUT')
+        <label>{{ __('ui.allowed_update_version') }}<select name="release_id"><option value="">{{ __('ui.no_update_permission') }}</option>@foreach($updateReleases as $release)<option value="{{ $release->id }}" @selected($license->update_release_id === $release->id)>v{{ $release->version }}{{ $release->is_security ? ' — '.__('ui.security_update') : '' }}</option>@endforeach</select></label>
+        <button class="primary">{{ __('ui.save') }}</button>
+    </form>
+</section>
+@endif
+
 <div class="detail-grid">
     <section class="panel detail-card">
         <div class="section-heading"><h2>{{ __('ui.license_information') }}</h2><span class="badge {{ $license->status->value }}">{{ __('ui.state_'.$license->status->value) }}</span></div>

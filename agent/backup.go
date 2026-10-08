@@ -43,6 +43,9 @@ func streamCommand(path string, name string, args ...string) error {
 // previously running writers; after migration begins, leave them stopped until
 // an explicit resume rather than running old code against a partial schema.
 func (c *Client) snapshot(directory string, appImage string) error {
+	return c.snapshotStorage(directory, appImage, "leave-panel_app_storage")
+}
+func (c *Client) snapshotStorage(directory string, appImage, storageVolume string) error {
 	if e := os.MkdirAll(directory, 0700); e != nil {
 		return e
 	}
@@ -57,17 +60,17 @@ func (c *Client) snapshot(directory string, appImage string) error {
 			running = append(running, name)
 		}
 	}
-	if len(running) > 0 {
-		if e := run(nil, "docker", append([]string{"stop"}, running...)...); e != nil {
-			return e
-		}
-	}
 	complete := false
 	defer func() {
 		if !complete && len(running) > 0 {
 			_ = run(nil, "docker", append([]string{"start"}, running...)...)
 		}
 	}()
+	if len(running) > 0 {
+		if e := run(nil, "docker", append([]string{"stop"}, running...)...); e != nil {
+			return e
+		}
+	}
 	if e := run(nil, "docker", "start", "office-db"); e != nil {
 		return fmt.Errorf("existing database container must be recoverable before snapshot: %w", e)
 	}
@@ -75,10 +78,12 @@ func (c *Client) snapshot(directory string, appImage string) error {
 	if e := streamCommand(sql, "docker", "exec", "office-db", "sh", "-c", `export MYSQL_PWD="$MARIADB_ROOT_PASSWORD"; exec mariadb-dump --user=root --single-transaction --routines --events --databases "$MARIADB_DATABASE"`); e != nil {
 		return e
 	}
-	if _, e := output("docker", "volume", "inspect", "leave-panel_app_storage"); e == nil {
-		if e = streamCommand(filepath.Join(directory, "storage.tar.gz"), "docker", "run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "tar", "-v", "leave-panel_app_storage:/source:ro", appImage, "-C", "/source", "-czf", "-", "."); e != nil {
+	if _, e := output("docker", "volume", "inspect", storageVolume); e == nil {
+		if e = streamCommand(filepath.Join(directory, "storage.tar.gz"), "docker", "run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "tar", "-v", storageVolume+":/source:ro", appImage, "-C", "/source", "-czf", "-", "."); e != nil {
 			return e
 		}
+	} else {
+		return fmt.Errorf("persistent storage volume is unavailable: %w", e)
 	}
 	checks := map[string]string{"database.sql": shaFile(sql)}
 	if _, e := os.Stat(filepath.Join(directory, "storage.tar.gz")); e == nil {

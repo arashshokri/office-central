@@ -29,7 +29,9 @@ class LicenseController extends Controller
     public function show(License $license)
     {
         return view('admin.license-show', [
-            'license' => $license->load(['customer', 'product', 'release', 'installations']),
+            'license' => $license->load(['customer', 'product', 'release', 'updateRelease', 'installations']),
+            'updateReleases' => Release::where('product_id', $license->product_id)->where('status', 'published')
+                ->whereNotNull('runtime_manifest')->latest('published_at')->get(),
         ]);
     }
 
@@ -100,6 +102,19 @@ class LicenseController extends Controller
         $license->update(['status' => $status, 'state_revision' => DB::raw('state_revision + 1')]);
         $audit->record('license.'.$status, $license, $before, $license->fresh()->toArray());
 
+        return back()->with('success', __('ui.saved'));
+    }
+
+    public function updateRelease(Request $request, License $license, AuditService $audit)
+    {
+        $data = $request->validate(['release_id' => ['nullable', 'exists:releases,id']]);
+        $release = empty($data['release_id']) ? null : Release::findOrFail($data['release_id']);
+        if ($release && ($release->product_id !== $license->product_id || $release->status->value !== 'published' || ! $release->runtime_manifest)) {
+            throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
+        }
+        $before = $license->toArray();
+        $license->update(['update_release_id' => $release?->id, 'state_revision' => DB::raw('state_revision + 1')]);
+        $audit->record('license.update_permission_changed', $license, $before, $license->fresh()->toArray());
         return back()->with('success', __('ui.saved'));
     }
 

@@ -108,7 +108,7 @@ final class InstallerService
 
         return DB::transaction(function () use ($installation, $presented): array {
             $installation = Installation::whereKey($installation->id)->lockForUpdate()->firstOrFail();
-            $installation->load(['license.product', 'release', 'targetRelease']);
+            $installation->load(['license.product', 'license.updateRelease', 'release', 'targetRelease']);
             $license = $installation->license;
             $access = 'allowed'; $code = 'ACCESS_ALLOWED'; $message = null;
             if (! hash_equals($installation->fingerprint, $presented)) {
@@ -135,7 +135,8 @@ final class InstallerService
             }
             $installation->last_state_synced_at = now();
             $installation->save();
-            $release = $installation->targetRelease ?? $installation->release;
+            $update = $this->offeredUpdate($installation);
+            $release = $update ?? $installation->release;
             $payload = [
                 'kind' => 'state', 'protocol' => 2, 'installation_id' => $installation->uuid,
                 'license_id' => $license->uuid, 'sequence' => $installation->agent_sequence,
@@ -145,6 +146,12 @@ final class InstallerService
                 'completed' => $installation->completed_at !== null,
                 'activation_mode' => $license->activation_mode,
                 'application_version' => $installation->application_version,
+                'license' => ['id' => $license->uuid, 'display_key' => $license->license_key_prefix.'••••',
+                    'activated_at' => $installation->activated_at?->toISOString(), 'expires_at' => $license->expires_at?->toISOString(),
+                    'status' => $license->status->value, 'customer' => $license->customer?->name],
+                'update' => ['available' => $access === 'allowed' && $update !== null, 'release_id' => $update?->uuid,
+                    'version' => $update?->version, 'security' => (bool) $update?->is_security,
+                    'channel' => $update?->channel->value, 'notes' => $update ? mb_substr((string) $update->release_notes, 0, 4000) : null],
                 'product' => $license->product->slug,
                 'issued_at' => now()->toISOString(),
                 'offline_policy' => 'keep_last_signed_state_indefinitely',
@@ -167,8 +174,15 @@ final class InstallerService
         return DB::transaction(function () use ($installation, $data): array {
             $license = License::whereKey($installation->license_id)->lockForUpdate()->firstOrFail();
             $installation = Installation::whereKey($installation->id)->lockForUpdate()->firstOrFail();
-            $installation->load(['release', 'targetRelease']);
-            $release = $installation->targetRelease ?? $installation->release;
+            $installation->load(['release', 'targetRelease', 'license.updateRelease']);
+            $update = $this->offeredUpdate($installation);
+            // A completion response can be lost just before the administrator
+            // authorizes the next version. A receipt for the installed release
+            // must stay idempotent without consuming the newer permission.
+            if ($installation->completed_at && $installation->release?->uuid === ($data['release_id'] ?? null)) {
+                $update = null;
+            }
+            $release = $update ?? $installation->release;
             $this->require(hash_equals($installation->fingerprint, $this->hardware->make($data['hardware'], 2)),
                 'LICENSE_HARDWARE_MISMATCH', 'Completion must come from the reserved hardware.', 403);
             if ($error = $this->licenses->validateLicense($license)) {
@@ -176,7 +190,7 @@ final class InstallerService
             }
             $this->require($installation->status !== InstallationStatus::Locked && ! $license->temporarily_locked_at,
                 'INSTALLATION_LOCKED', 'Installation is locked by the administrator.', 403);
-            if ($license->activation_mode === 'attach_once') {
+            if ($license->activation_mode === 'attach_once' && ! $installation->completed_at) {
                 $this->require($data['health_ok'] === true && (! $release || $data['application_version'] === $release->version),
                     'INSTALLATION_RECEIPT_INVALID', 'Existing Office must pass its health checks and match the assigned version, if any.', 422);
             } else {
@@ -192,7 +206,7 @@ final class InstallerService
                 $license->update(['status' => 'active', 'activated_at' => now(), 'consumed_at' => now()]);
                 $this->event($installation, 'installation_completed', ['release_id' => $data['release_id'] ?? null, 'mode' => $license->activation_mode]);
             }
-            if ($installation->target_release_id) {
+            if ($update) {
                 $installation->update(['release_id' => $release->id, 'target_release_id' => null,
                     'application_version' => $release->version, 'deployment_receipt' => collect($data)->except('hardware')->all()]);
                 $this->event($installation, 'installation_updated', ['release_id' => $release->uuid]);
@@ -202,16 +216,26 @@ final class InstallerService
         }, 5);
     }
 
+    private function offeredUpdate(Installation $installation): ?Release
+    {
+        if (! $installation->completed_at) { return null; }
+        $release = $installation->targetRelease ?? $installation->license->updateRelease;
+        if (! $release || $release->status->value !== 'published' || ! $release->runtime_manifest
+            || $release->product_id !== $installation->product_id
+            || ! version_compare($release->version, $installation->application_version ?: '0.0.0', '>')) { return null; }
+        return $release;
+    }
+
     public function download(Installation $installation, array $data): array
     {
-        $installation->load(['license', 'release', 'targetRelease']);
+        $installation->load(['license.updateRelease', 'release', 'targetRelease']);
         $this->require(hash_equals($installation->fingerprint, $this->hardware->make($data['hardware'], 2)),
             'LICENSE_HARDWARE_MISMATCH', 'Package requests must come from the bound hardware.', 403);
         if ($error = $this->licenses->validateInstallation($installation)) {
             throw new InstallerException(...$error);
         }
         $this->require(! $installation->license->temporarily_locked_at, 'TEMPORARY_LOCK', 'Installation is locked.', 403);
-        $release = $installation->targetRelease ?? $installation->release;
+        $release = $this->offeredUpdate($installation) ?? $installation->release;
         $this->require($release?->uuid === $data['release_id'] && $release->status->value === 'published'
             && $release->runtime_manifest && $release->package_path, 'RELEASE_NOT_ASSIGNED', 'Only the release assigned to this installation can be downloaded.', 403);
         $token = 'odt_'.Str::random(64);

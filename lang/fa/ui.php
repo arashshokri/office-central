@@ -1,6 +1,19 @@
 <?php
 
 return [
+    'security_update' => 'بروزرسانی امنیتی',
+    'customer_update_permission' => 'مجوز بروزرسانی مشتری',
+    'customer_update_help' => 'فقط نسخهٔ انتخاب‌شده در پنل Office این مشتری قابل دریافت و نصب خواهد بود.',
+    'allowed_update_version' => 'نسخهٔ مجاز بروزرسانی',
+    'no_update_permission' => 'بدون بروزرسانی جدید',
+    'update_requires_runtime' => 'نسخه باید متعلق به همین محصول، منتشرشده و دارای بستهٔ آمادهٔ Docker باشد.',
+    'navigation' => 'مدیریت مرکزی',
+    'workspace' => 'فضای مدیریت',
+    'role_admin' => 'مدیر سامانه',
+    'role_super_admin' => 'مدیر کل',
+    'role_viewer' => 'مشاهده‌گر',
+    'toggle_sidebar' => 'باز و بسته کردن منو',
+
     'state_pending' => 'در انتظار تکمیل نصب',
     'app' => 'مرکز مدیریت آفیس', 'dashboard' => 'داشبورد', 'customers' => 'مشتریان', 'products' => 'محصولات', 'releases' => 'نسخه‌ها',
     'licenses' => 'لایسنس‌ها', 'installations' => 'نصب‌ها', 'security_events' => 'رویدادهای امنیتی', 'audit_logs' => 'گزارش تغییرات',

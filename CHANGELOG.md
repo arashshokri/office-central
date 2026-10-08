@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0-rc.6
+
+- Redesign the shared Central sidebar, header, dashboards, forms and tables with local Vazirmatn, SVG icons and responsive light/dark themes.
+- Grant a published runtime/security update per customer license, with signed read-only license metadata and enforced package authorization.
+- Move Office helper controls into Settings / System update, retaining the Office layout and theme.
+- Run authenticated asynchronous updates with progress, precise redacted errors, database/storage snapshots and recoverable completion receipts.
+- Preserve the current database engine, credentials, storage, proxy networks and deployment configuration during updates.
+- Cover update authorization, migration failure, lost confirmation, maintenance access and administrator permissions.
+
 ## 1.4.0-rc.5
 
 - Default to connecting an existing Office using an attach_once license; require neither a runtime bundle nor source encoding.

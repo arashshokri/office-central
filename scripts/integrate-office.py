@@ -103,12 +103,18 @@ if '/run/office-agent/control:ro' not in text:
                       +'    - ${OFFICE_AGENT_ROOT:-/var/lib/office-helper}/agent/control:/run/office-agent/control:ro\n')
     compose.write_text(text,encoding='utf-8',newline='\n')
 layout=office/'resources/views/layouts/app.blade.php';text=layout.read_text(encoding='utf-8')
-if "route('office-agent.license')" not in text:
-    anchor='                            @if($settingsVisible)'
-    if anchor not in text:raise SystemExit('Office sidebar anchor is missing; merge helper link manually.')
-    link="                            @if(auth()->user()?->role === 'admin')\n"
-    link+="                            <li class=\"nav-item\"><a class=\"nav-link\" href=\"{{ route('office-agent.license') }}\"><i class=\"fas fa-key\"></i><span class=\"nav-label\">مجوز و helper</span></a></li>\n                            @endif\n\n"
-    layout.write_text(text.replace(anchor,link+anchor,1),encoding='utf-8',newline='\n')
+link="                            @if(auth()->user()?->role === 'admin')\n"
+link+="                            <li class=\"nav-item\"><a class=\"nav-link\" href=\"{{ route('office-agent.license') }}\"><i class=\"fas fa-key\"></i><span class=\"nav-label\">مجوز و helper</span></a></li>\n                            @endif\n\n"
+if link in text:layout.write_text(text.replace(link,''),encoding='utf-8',newline='\n')
+settings=office/'app/Http/Controllers/SettingsController.php';text=settings.read_text(encoding='utf-8')
+if "route('settings.system-update')" not in text:
+    anchor="        ])->where('visible', true)->values();"
+    if anchor not in text:raise SystemExit('Office settings controller anchor is missing.')
+    entry="            [\n                'title' => 'بروزرسانی سامانه',\n                'description' => 'وضعیت لایسنس، اعتبار و دریافت نسخه‌های مجاز از مرکز',\n                'icon' => 'fa-arrows-rotate',\n                'route' => route('settings.system-update'),\n                'visible' => $user->isAdmin(),\n            ],\n"
+    settings.write_text(text.replace(anchor,entry+anchor),encoding='utf-8',newline='\n')
+console=office/'routes/console.php';text=console.read_text(encoding='utf-8')
+text=text.replace("app(\\App\\Services\\OfficeLicense::class)->decision()['allowed']);", "app(\\App\\Services\\OfficeLicense::class)->decision()['allowed'] && !app(\\App\\Services\\OfficeLicense::class)->maintenance());")
+console.write_text(text,encoding='utf-8',newline='\n')
 dockerIgnore=office/'.dockerignore';text=dockerIgnore.read_text(encoding='utf-8')
 for pattern in ['.office-central-fix', 'dist', 'agent', '__pycache__']:
     if pattern not in text.splitlines():text+='\n'+pattern+'\n'
