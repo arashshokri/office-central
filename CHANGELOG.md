@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0-rc.7
+
+- Snapshot the accepted update response before starting the background worker, avoiding concurrent reads of mutable job progress.
+- Supply the example service environment during CI Compose validation on a clean checkout.
+
 ## 1.4.0-rc.6
 
 - Redesign the shared Central sidebar, header, dashboards, forms and tables with local Vazirmatn, SVG icons and responsive light/dark themes.

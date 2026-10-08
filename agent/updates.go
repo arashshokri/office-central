@@ -277,6 +277,7 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 	}
 	// The accepted operation owns the mutex before its response is sent. No
 	// second request can queue a duplicate migration or race signed sequences.
+	accepted := job
 	go func() {
 		defer mu.Unlock()
 		if e := c.performUpdate(&job, h); e != nil {
@@ -286,7 +287,7 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 			enforce(s)
 		}
 	}()
-	writeControlJSON(w, 202, job)
+	writeControlJSON(w, 202, accepted)
 	return true
 }
 

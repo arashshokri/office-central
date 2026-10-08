@@ -8,7 +8,7 @@ helper بخشی از خود Office است. نصب موجود را شناسایی
 
 ```bash
 cd /opt/office-central
-sudo bash centralctl.sh update v1.4.0-rc.6
+sudo bash centralctl.sh update v1.4.0-rc.7
 sudo bash centralctl.sh doctor
 ```
 
@@ -20,7 +20,7 @@ sudo bash centralctl.sh doctor
 sudo bash office-deploy.sh
 ```
 
-گزینهٔ **1 — Update** و نسخهٔ **v3.8.21** را انتخاب کنید. این یک ارتقای معمولی با حفظ داده و تنظیمات است. بعد از ارتقا، صفحهٔ **تنظیمات سامانه ← بروزرسانی سامانه** ظاهر می‌شود و گزینهٔ قبلی از سایدبار حذف می‌شود. کنترل مجوز تا اتصال موفق helper فعال نمی‌شود.
+گزینهٔ **1 — Update** و نسخهٔ **v3.8.22** را انتخاب کنید. این یک ارتقای معمولی با حفظ داده و تنظیمات است. بعد از ارتقا، صفحهٔ **تنظیمات سامانه ← بروزرسانی سامانه** ظاهر می‌شود و گزینهٔ قبلی از سایدبار حذف می‌شود. کنترل مجوز تا اتصال موفق helper فعال نمی‌شود.
 
 ۳. در Central مشتری فعال و محصول Office با slug برابر `office` داشته باشید. در **لایسنس جدید**، گزینهٔ پیش‌فرض **اتصال Office موجود** را انتخاب کنید. برای این مسیر نسخه اختیاری است؛ هیچ بسته‌ای لازم نیست. اگر نسخه تعیین کنید، نسخهٔ Office نصب‌شده باید دقیقاً با آن یکسان باشد.
 
@@ -39,20 +39,20 @@ sudo office-agent status
 sudo journalctl -u office-agent -n 100 --no-pager
 ```
 
-اگر helper قبلاً متصل شده، پس از ارتقای Central همین فرمان نصب و اتصال را دوباره اجرا کنید تا باینری helper به‌روز شود؛ هویت موجود و مجوز مصرف‌شده حفظ می‌شوند و کد تازه لازم نیست. فقط ارتقای اولیهٔ Office به v3.8.21 با مدیر نسخه انجام می‌شود. پس از آن مشتری از صفحهٔ بروزرسانی سامانه نسخهٔ مجاز را نصب می‌کند.
+اگر helper قبلاً متصل شده، پس از ارتقای Central همین فرمان نصب و اتصال را دوباره اجرا کنید تا باینری helper به‌روز شود؛ هویت موجود و مجوز مصرف‌شده حفظ می‌شوند و کد تازه لازم نیست. فقط ارتقای اولیهٔ Office به v3.8.22 با مدیر نسخه انجام می‌شود. پس از آن مشتری از صفحهٔ بروزرسانی سامانه نسخهٔ مجاز را نصب می‌کند.
 
 ## مشتری جدید و سرور خالی
 
 یک بار روی ماشین سازندهٔ خودتان با Linux، Docker و Python 3 از سورس مورد اعتماد Office بستهٔ آماده بسازید:
 
 ```bash
-python3 scripts/office-helper.py build --source /srv/src/office --output /srv/releases/office-runtime-3.8.21-amd64.zip
+python3 scripts/office-helper.py build --source /srv/src/office --output /srv/releases/office-runtime-3.8.22-amd64.zip
 ```
 
 ابزار داخل مخزن Office است. ورودی می‌تواند پوشه، ZIP سورس یا لینک GitHub با تگ مشخص باشد:
 
 ```bash
-python3 scripts/office-helper.py build --source https://github.com/arashshokri/office --ref v3.8.21 --output /srv/releases/office-runtime-3.8.21-amd64.zip
+python3 scripts/office-helper.py build --source https://github.com/arashshokri/office --ref v3.8.22 --output /srv/releases/office-runtime-3.8.22-amd64.zip
 ```
 
 خروجی را در **نسخه‌ها** برای محصول Office بارگذاری و منتشر کنید. یا آن را با نام `office-runtime-VERSION-amd64.zip` به GitHub Release همان نسخه پیوست و مخزن را در Central همگام کنید. ZIP سورس ورودی ابزار سازنده است؛ مشتری imageهای آماده را دریافت می‌کند. برای arm64 روی سازندهٔ همان معماری از `--arch arm64` و در Central از `CENTRAL_RUNTIME_ARCHITECTURE=arm64` استفاده کنید.
