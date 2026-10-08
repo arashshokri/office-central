@@ -4,12 +4,50 @@ import (
 	"archive/zip"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func TestConcurrentSetupPinsOnlyOneDeviceIdentity(t *testing.T) {
+	public, _, _ := ed25519.GenerateKey(rand.Reader)
+	var requests atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		time.Sleep(30 * time.Millisecond)
+		json.NewEncoder(w).Encode(map[string]string{"public_key": b64.EncodeToString(public)})
+	}))
+	defer server.Close()
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = server.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	transport.TLSClientConfig.RootCAs = x509.NewCertPool()
+	transport.TLSClientConfig.RootCAs.AddCert(server.Certificate())
+	previous := http.DefaultTransport
+	http.DefaultTransport = transport
+	defer func() { http.DefaultTransport = previous; transport.CloseIdleConnections() }()
+	root := t.TempDir()
+	clients := make(chan *Client, 2)
+	errors := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() { c, err := openClient(root, server.URL); clients <- c; errors <- err }()
+	}
+	a, b := <-clients, <-clients
+	for i := 0; i < 2; i++ {
+		if err := <-errors; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if requests.Load() != 1 || a.Identity.Key != b.Identity.Key || a.Identity.RequestID != b.Identity.RequestID {
+		t.Fatal("simultaneous setup replaced the device identity")
+	}
+}
 
 func fixtureState(t *testing.T) (*Client, Hardware, ed25519.PrivateKey, State) {
 	t.Helper()

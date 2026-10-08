@@ -6,7 +6,8 @@ final class OfficeLicense
 {
     public function enabled(): bool
     {
-        return is_file(base_path('office-managed')) || config('office-agent.enabled');
+        return is_file(base_path('office-managed')) || config('office-agent.enabled')
+            || is_file(config('office-agent.state_dir').'/enabled');
     }
 
     public function decision(): array
@@ -59,6 +60,8 @@ final class OfficeLicense
             stream_set_timeout($connection, $timeout);
             $body = json_encode($data, JSON_THROW_ON_ERROR);
             $token = config('office-agent.control_token');
+            $tokenFile = config('office-agent.control_token_file');
+            if ($tokenFile && is_readable($tokenFile)) { $token = trim(file_get_contents($tokenFile)); }
             if (! preg_match('/^[a-f0-9]{64}$/D', $token)) { throw new \RuntimeException('Invalid helper control identity.'); }
             $request = "POST ".$path." HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer ".$token
                 ."\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: ".strlen($body)."\r\n\r\n".$body;

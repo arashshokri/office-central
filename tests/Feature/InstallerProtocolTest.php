@@ -118,4 +118,33 @@ class InstallerProtocolTest extends TestCase
         $this->signed('reactivate',$body,$data['credential'])->assertForbidden()->assertJsonPath('code','LICENSE_PRODUCT_MISMATCH');
         $this->assertNull($new->fresh()->consumed_at);
     }
+
+    public function test_existing_office_connects_without_package_and_consumes_only_after_healthy_completion(): void
+    {
+        $license = $this->license();
+        $license->update(['activation_mode' => 'attach_once', 'release_id' => null]);
+        $body = $this->activation(); $body['intent'] = 'connect';
+        $first = $this->signed('begin', $body)->assertOk()->json('data');
+        $this->assertNull($license->fresh()->consumed_at);
+        $this->assertNull($this->payload($first['signed_state'])['package']);
+        $receipt = ['hardware' => $this->hardware, 'application_version' => '3.8.20-rc.2', 'health_ok' => false];
+        $this->signed('complete', $receipt, $first['credential'])->assertUnprocessable();
+        $this->assertNull($license->fresh()->consumed_at);
+        $receipt['health_ok'] = true;
+        $result = $this->signed('complete', $receipt, $first['credential'])->assertOk()->json('data.signed_state');
+        $this->assertSame('allowed', $this->payload($result)['access']);
+        $this->assertNotNull($license->fresh()->consumed_at);
+        $clone = $this->hardware; $clone['product_uuid'] = '30b612fc-d40b-43aa-a660-00ff0202dd10';
+        $result = $this->signed('state', ['hardware' => $clone], $first['credential'])->assertOk()->json('data.signed_state');
+        $this->assertSame('locked', $this->payload($result)['access']);
+        $this->assertSame('active', Installation::first()->status->value);
+    }
+
+    public function test_connection_code_cannot_be_used_for_a_fresh_installation(): void
+    {
+        $license = $this->license(); $license->update(['activation_mode' => 'attach_once', 'release_id' => null]);
+        $this->signed('begin', $this->activation())->assertUnprocessable()->assertJsonPath('code', 'HELPER_MODE_MISMATCH');
+        $this->assertDatabaseCount('installations', 0);
+        $this->assertNull($license->fresh()->consumed_at);
+    }
 }

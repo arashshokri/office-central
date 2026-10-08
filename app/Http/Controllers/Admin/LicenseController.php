@@ -47,7 +47,7 @@ class LicenseController extends Controller
     public function store(Request $request, LicenseKeyService $keys, AuditService $audit)
     {
         $data = $request->validate([
-            'activation_mode' => ['nullable', 'in:legacy,installer_once'],
+            'activation_mode' => ['nullable', 'in:legacy,installer_once,attach_once'],
             'deployment.app_url' => ['nullable', 'required_if:activation_mode,installer_once', 'url:https', 'max:255'],
             'deployment.admin_email' => ['nullable', 'required_if:activation_mode,installer_once', 'email', 'max:255'],
             'deployment.admin_name' => ['nullable', 'string', 'max:100'],
@@ -65,10 +65,13 @@ class LicenseController extends Controller
             abort_unless(Release::whereKey($data['release_id'])->where('product_id', $data['product_id'])->exists(), 422);
         }
 
-        if (($data['activation_mode'] ?? 'legacy') === 'installer_once') {
+        if (in_array($data['activation_mode'] ?? 'legacy', ['installer_once', 'attach_once'], true)) {
             $release = Release::whereKey($data['release_id'] ?? 0)->first();
-            if ($release?->status->value !== 'published' || ! $release->runtime_manifest || $release->product->slug !== 'office') {
+            if ($data['activation_mode'] === 'installer_once' && ($release?->status->value !== 'published' || ! $release->runtime_manifest || $release->product->slug !== 'office')) {
                 throw ValidationException::withMessages(['release_id' => __('ui.protected_release_required')]);
+            }
+            if (Product::find($data['product_id'])?->slug !== 'office') {
+                throw ValidationException::withMessages(['product_id' => __('ui.office_product_required')]);
             }
             $data['max_installations'] = 1;
             $data['deployment']['port'] = (int) ($data['deployment']['port'] ?? 8080);

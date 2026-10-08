@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0-rc.5
+
+- Default to connecting an existing Office using an attach_once license; require neither a runtime bundle nor source encoding.
+- Detect and validate the running deployment, add a local helper service and enable licensing only after successful health-confirmed completion.
+- Preserve application containers, database, files, users, encryption keys and proxy configuration during connection.
+- Include the Office license/helper page and read-only helper mounts in the normal Office update.
+- Make commercial source encoding optional for fresh Docker package builds and simplify operational instructions.
+- Add connection safety, hardware clone, cached configuration and unencoded bundle regression coverage.
+
 ## 1.4.0-rc.4
 
 - Install the standalone Go agent, customer launcher, owner source builder and validation workflow in the Office repository itself.

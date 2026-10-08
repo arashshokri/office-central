@@ -15,7 +15,7 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
-        if (is_file(base_path('office-managed'))) {
+        if (is_file(base_path('office-managed')) && is_dir(base_path('protected-views'))) {
             config(['view.compiled' => base_path('protected-views'), 'view.check_cache_timestamps' => false]);
         }
         $this->app->booted(function () {
@@ -28,7 +28,8 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
         Route::middleware('web')->group(function () {
             Route::get('/internal/license/access', fn () => response('', 204));
             Route::get('/license', function () {
-                return view('office-agent.locked', app(OfficeLicense::class)->decision());
+                return view('office-agent.locked', array_merge(app(OfficeLicense::class)->decision(),
+                    ['helperEnabled' => app(OfficeLicense::class)->enabled()]));
             })->middleware('auth')->name('office-agent.license');
             Route::post('/license/reactivate', function (\Illuminate\Http\Request $request) {
                 abort_unless($request->user()->role === 'admin', 403);
@@ -42,12 +43,12 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
             })->middleware(['auth', 'throttle:6,1'])->name('office-agent.reactivate');
         });
 
-        Artisan::command('office-agent:health {--expected-version=}', function () {
+        Artisan::command('office-agent:health {--expected-version=} {--json}', function () {
             $version = trim(file_get_contents(base_path('VERSION')));
             if ($this->option('expected-version') && $version !== $this->option('expected-version')) {
                 throw new \RuntimeException('Installed Office version does not match the assigned release.');
             }
-            if (is_file(base_path('office-managed')) && ! extension_loaded('ionCube Loader')) {
+            if (is_dir(base_path('protected-views')) && ! extension_loaded('ionCube Loader')) {
                 throw new \RuntimeException('Protected runtime loader is missing.');
             }
             DB::select('SELECT 1');
@@ -59,7 +60,11 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
                 ? array_keys(app('migrator')->getMigrationFiles(database_path('migrations'))) : [],
                 app('migration.repository')->getRan());
             if ($pending) { throw new \RuntimeException('Pending migrations exist.'); }
-            $this->info('Office application, database, cache, storage and migrations: OK');
+            if ($this->option('json')) {
+                $this->line(json_encode(['status' => 'ok', 'version' => $version]));
+            } else {
+                $this->info('Office application, database, cache, storage and migrations: OK');
+            }
         });
 
         Artisan::command('office-agent:admin', function () {

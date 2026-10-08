@@ -26,14 +26,20 @@ final class InstallerService
         return DB::transaction(function () use ($data, $ip, $origin): array {
             $license = License::where('license_key_hash', $this->keys->hash($data['license_key']))->lockForUpdate()->first();
             $this->require($license !== null, 'LICENSE_NOT_FOUND', 'License was not found.', 404);
-            $this->require($license->activation_mode === 'installer_once', 'INSTALLER_LICENSE_REQUIRED', 'Use an installer license.', 422);
+            $this->require(in_array($license->activation_mode, ['installer_once', 'attach_once'], true), 'INSTALLER_LICENSE_REQUIRED', 'Use a helper license.', 422);
             if ($error = $this->licenses->validateLicense($license)) {
                 throw new InstallerException(...$error);
             }
             $license->load(['product', 'release', 'customer']);
             $this->require($license->product->slug === 'office', 'INSTALLER_PRODUCT_INVALID', 'The Office helper requires the Office product.', 422);
             $this->require($license->product->status === 'active' && $license->customer->status === 'active', 'LICENSE_DISABLED', 'Customer or product is disabled.', 403);
-            $this->require($license->release?->status->value === 'published' && is_array($license->release->runtime_manifest), 'RUNTIME_PACKAGE_REQUIRED', 'An approved runtime bundle must be assigned to this license.', 409);
+            if ($license->activation_mode === 'installer_once') {
+                $this->require($license->release?->status->value === 'published' && is_array($license->release->runtime_manifest), 'RUNTIME_PACKAGE_REQUIRED', 'Assign an installation package for a new Office installation.', 409);
+            }
+            if (! $origin) {
+                $this->require(($data['intent'] ?? 'install') === ($license->activation_mode === 'attach_once' ? 'connect' : 'install'),
+                    'HELPER_MODE_MISMATCH', 'Use an existing Office license to connect, or an installation license for a new server.', 422);
+            }
             $fingerprint = $this->hardware->make($data['hardware'], 2);
             $existing = $license->installations()->where('client_request_id', $data['client_request_id'])->first();
             if ($existing) {
@@ -137,6 +143,8 @@ final class InstallerService
                 'device_public_key' => $installation->device_public_key,
                 'access' => $access, 'code' => $code, 'message' => $message,
                 'completed' => $installation->completed_at !== null,
+                'activation_mode' => $license->activation_mode,
+                'application_version' => $installation->application_version,
                 'product' => $license->product->slug,
                 'issued_at' => now()->toISOString(),
                 'offline_policy' => 'keep_last_signed_state_indefinitely',
@@ -168,16 +176,21 @@ final class InstallerService
             }
             $this->require($installation->status !== InstallationStatus::Locked && ! $license->temporarily_locked_at,
                 'INSTALLATION_LOCKED', 'Installation is locked by the administrator.', 403);
-            $this->require($data['release_id'] === $release->uuid
-                && hash_equals($release->package_sha256, $data['package_sha256'])
-                && $data['application_version'] === $release->version
-                && $data['health_ok'] === true, 'INSTALLATION_RECEIPT_INVALID', 'The installed release, checksum and successful health check must match.', 422);
+            if ($license->activation_mode === 'attach_once') {
+                $this->require($data['health_ok'] === true && (! $release || $data['application_version'] === $release->version),
+                    'INSTALLATION_RECEIPT_INVALID', 'Existing Office must pass its health checks and match the assigned version, if any.', 422);
+            } else {
+                $this->require($release && ($data['release_id'] ?? null) === $release->uuid
+                    && hash_equals($release->package_sha256, $data['package_sha256'] ?? '')
+                    && $data['application_version'] === $release->version
+                    && $data['health_ok'] === true, 'INSTALLATION_RECEIPT_INVALID', 'The installed release, checksum and successful health check must match.', 422);
+            }
             if (! $installation->completed_at) {
                 $installation->update(['status' => InstallationStatus::Active, 'completed_at' => now(), 'activated_at' => now(),
                     'application_version' => $data['application_version'],
                     'deployment_receipt' => collect($data)->except('hardware')->all()]);
                 $license->update(['status' => 'active', 'activated_at' => now(), 'consumed_at' => now()]);
-                $this->event($installation, 'installation_completed', ['release_id' => $data['release_id']]);
+                $this->event($installation, 'installation_completed', ['release_id' => $data['release_id'] ?? null, 'mode' => $license->activation_mode]);
             }
             if ($installation->target_release_id) {
                 $installation->update(['release_id' => $release->id, 'target_release_id' => null,

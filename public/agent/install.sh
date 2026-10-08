@@ -24,4 +24,4 @@ if ! docker compose version >/dev/null 2>&1; then
     printf '%s  %s\n' "$checksum" "$work/install-docker.sh" | sha256sum --check --status
     bash "$work/install-docker.sh"
 fi
-"$work/office-agent" install "$@"
+"$work/office-agent" setup "$@"

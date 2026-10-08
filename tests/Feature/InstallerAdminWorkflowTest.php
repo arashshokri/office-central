@@ -14,10 +14,23 @@ class InstallerAdminWorkflowTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'admin', 'active' => true]);
         $this->actingAs($admin)->get('/licenses/create')->assertOk()
-            ->assertSee(__('ui.protected_release_required'))
+            ->assertSee(__('ui.helper_simple_help'))
             ->assertSee('deployment[app_url]', false);
         $viewer = User::factory()->create(['role' => 'viewer', 'active' => true]);
         $this->actingAs($viewer)->get('/licenses/create')->assertForbidden();
+    }
+
+    public function test_existing_office_license_can_be_issued_without_any_release_or_deployment_fields(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'active' => true]);
+        $customer = Customer::create(['name' => 'Existing customer', 'status' => 'active']);
+        $product = Product::create(['name' => 'Office', 'slug' => 'office', 'status' => 'active']);
+        $this->actingAs($admin)->post('/licenses', ['activation_mode' => 'attach_once', 'customer_id' => $customer->id,
+            'product_id' => $product->id, 'max_installations' => 1])->assertRedirect()->assertSessionHasNoErrors();
+        $license = License::firstOrFail();
+        $this->assertSame('attach_once', $license->activation_mode);
+        $this->assertNull($license->release_id);
+        $this->get(route('licenses.show', $license))->assertOk()->assertSee(__('ui.attach_preserves_data'));
     }
 
     public function test_source_archive_cannot_issue_installer_code_and_returns_actionable_form_error(): void

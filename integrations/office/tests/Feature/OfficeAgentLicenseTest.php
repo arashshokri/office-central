@@ -79,6 +79,20 @@ PHP;
         config(['office-agent.enabled'=>false]);
         $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
     }
+    public function test_connection_marker_enables_licensing_without_rebuilding_cached_configuration(): void {
+        config(['office-agent.enabled'=>false]);
+        $this->state['access']='locked';$this->writeState();
+        $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
+        file_put_contents($this->dir.'/enabled', 'office-helper/v2');
+        $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
+    }
+    public function test_control_identity_can_be_added_after_office_configuration_was_cached(): void {
+        config(['office-agent.control_token'=>'', 'office-agent.control_token_file'=>$this->dir.'/token']);
+        file_put_contents($this->dir.'/token', str_repeat('a',64));
+        $this->assertTrue(app(OfficeLicense::class)->decision()['allowed']);
+        unlink($this->dir.'/token');
+        $this->assertFalse(app(OfficeLicense::class)->decision()['allowed']);
+    }
     public function test_business_api_is_locked_but_login_remains_accessible(): void {
         $this->state['access']='locked';$this->writeState();
         $this->getJson('/api/v1/projects')->assertStatus(423)->assertJsonPath('code','OFFICE_LICENSE_LOCKED');

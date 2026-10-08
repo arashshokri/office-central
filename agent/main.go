@@ -34,11 +34,26 @@ func execute() error {
 		return errors.New("run office-agent as root")
 	}
 	if len(os.Args) < 2 {
-		return errors.New("usage: office-agent install|resume|daemon|status|reactivate|update [--root /opt/office]")
+		return errors.New("usage: office-agent setup|connect|install|resume|daemon|status|reactivate|update [--root PATH]")
 	}
 	command := os.Args[1]
+	if command == "setup" {
+		command = "install"
+		if existingOfficeDetected() {
+			command = "connect"
+		}
+		if _, err := os.Stat("/opt/office/compose.json"); err == nil {
+			command = "resume"
+		}
+	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
-	root := flags.String("root", "/opt/office", "persistent installation directory")
+	defaultRoot := "/opt/office"
+	if command == "connect" {
+		defaultRoot = "/var/lib/office-helper"
+	} else if _, err := os.Stat("/var/lib/office-helper/agent/private/existing.json"); err == nil {
+		defaultRoot = "/var/lib/office-helper"
+	}
+	root := flags.String("root", defaultRoot, "persistent helper directory")
 	endpoint := flags.String("endpoint", "https://update.ponet.ir", "HTTPS update origin")
 	adopt := flags.String("adopt-env", "", "original Office environment for adoption")
 	if e := flags.Parse(os.Args[2:]); e != nil {
@@ -66,7 +81,11 @@ func execute() error {
 		if e = verify(c.Identity.Trust, envelope, &s); e != nil {
 			return e
 		}
-		fmt.Printf("Installation: %s\nAccess: %s\nMessage: %s\nVersion: %s\n", s.Installation, s.Access, s.Message, s.Package.Version)
+		installedVersion := s.ApplicationVersion
+		if installedVersion == "" {
+			installedVersion = s.Package.Version
+		}
+		fmt.Printf("Installation: %s\nAccess: %s\nMessage: %s\nVersion: %s\n", s.Installation, s.Access, s.Message, installedVersion)
 		return nil
 	}
 	if command == "reactivate" || command == "update" {
@@ -78,6 +97,58 @@ func execute() error {
 			}
 		}
 		return c.local(command, code)
+	}
+	if command == "resume" {
+		if profile, err := c.existingOffice(); err != nil {
+			return err
+		} else if profile != nil {
+			command = "connect"
+		}
+	}
+	if command == "connect" {
+		connectionLock, err := os.OpenFile(filepath.Join(c.Root, "agent/private/connect.lock"), os.O_CREATE|os.O_RDWR, 0600)
+		if err != nil {
+			return err
+		}
+		defer connectionLock.Close()
+		if err = syscall.Flock(int(connectionLock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			return errors.New("another helper connection is running")
+		}
+		defer syscall.Flock(int(connectionLock.Fd()), syscall.LOCK_UN)
+		if e = c.prepareExisting(); e != nil {
+			return e
+		}
+		code := ""
+		if c.Identity.Installation == "" {
+			code, e = prompt("One-use Office connection code: ")
+			if e != nil {
+				return e
+			}
+		}
+		if active, _ := output("systemctl", "is-active", "office-agent.service"); strings.TrimSpace(string(active)) == "active" {
+			defer exec.Command("systemctl", "start", "office-agent.service").Run()
+		}
+		if e = run(nil, "systemctl", "stop", "office-agent.service"); e != nil {
+			if _, err = output("systemctl", "cat", "office-agent.service"); err == nil {
+				return e
+			}
+		}
+		if raw, err := os.ReadFile(filepath.Join(c.Root, "agent/private/identity.json")); err == nil {
+			if err = json.Unmarshal(raw, &c.Identity); err != nil {
+				return err
+			}
+		}
+		if e = c.installService(true); e != nil {
+			return e
+		}
+		if e = c.waitControl(); e != nil {
+			return e
+		}
+		if e = c.local("connect", code); e != nil {
+			return e
+		}
+		fmt.Println("Office helper connected. Existing database, files and proxy settings preserved.")
+		return nil
 	}
 	if command != "install" && command != "resume" && command != "daemon" {
 		return errors.New("unknown command")
@@ -219,11 +290,23 @@ func (c *Client) daemon() error {
 	if e = os.Chown(sock, 0, 33); e != nil {
 		return e
 	}
+	tokenPath := filepath.Join(controlDir, "token")
+	if e = atomicWrite(tokenPath, []byte(c.Identity.Control), 0640); e != nil {
+		return e
+	}
+	if e = os.Chown(tokenPath, 0, 33); e != nil {
+		return e
+	}
 	var mu sync.Mutex
 	mux := http.NewServeMux()
 	controlToken := c.Identity.Control
 	deviceKey, _ := b64.DecodeString(c.Identity.Key)
 	enforce := func(s State) {
+		if profile, err := c.existingOffice(); err == nil && profile != nil {
+			if _, err = os.Stat(filepath.Join(c.Root, "agent/public/enabled")); os.IsNotExist(err) {
+				return
+			}
+		}
 		h, err := hardware()
 		fp, _ := h.fingerprint()
 		allowed := err == nil && s.Access == "allowed" && s.Completed && s.Hardware == fp && s.Presented == fp
@@ -275,7 +358,7 @@ func (c *Client) daemon() error {
 			w.Write(raw)
 			return
 		}
-		if r.URL.Path != "/reactivate" && r.URL.Path != "/update" {
+		if r.URL.Path != "/reactivate" && r.URL.Path != "/update" && r.URL.Path != "/connect" {
 			http.NotFound(w, r)
 			return
 		}
@@ -289,7 +372,9 @@ func (c *Client) daemon() error {
 		mu.Lock()
 		defer mu.Unlock()
 		h, e := hardware()
-		if e == nil && r.URL.Path == "/reactivate" {
+		if e == nil && r.URL.Path == "/connect" {
+			e = c.connectExisting(data.Code, h)
+		} else if e == nil && r.URL.Path == "/reactivate" {
 			if len(data.Code) < 10 || len(data.Code) > 40 {
 				http.Error(w, "invalid license", 422)
 				return
@@ -304,6 +389,10 @@ func (c *Client) daemon() error {
 				}
 			}
 		} else if e == nil {
+			if profile, err := c.existingOffice(); err != nil || profile != nil {
+				http.Error(w, "برای به‌روزرسانی Office موجود از گزینه Update همان نصب استفاده کنید؛ helper نیازی به نصب مجدد برنامه ندارد.", 409)
+				return
+			}
 			var s State
 			s, e = c.poll(h)
 			if e == nil {
@@ -334,6 +423,11 @@ func (c *Client) daemon() error {
 	mu.Unlock()
 	for {
 		mu.Lock()
+		if c.Identity.Installation == "" {
+			mu.Unlock()
+			time.Sleep(time.Second)
+			continue
+		}
 		h, e := hardware()
 		if e == nil {
 			var state State

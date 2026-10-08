@@ -7,4 +7,5 @@ return [
     'machine_file' => env('OFFICE_AGENT_MACHINE_FILE', '/run/office-agent/machine-id'),
     'socket' => env('OFFICE_AGENT_SOCKET', '/run/office-agent/control/control.sock'),
     'control_token' => env('OFFICE_AGENT_CONTROL_TOKEN', ''),
+    'control_token_file' => '/run/office-agent/control/token',
 ];

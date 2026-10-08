@@ -55,7 +55,7 @@ final class PackageService
     private function validateManifest(array $manifest, array $names): void
     {
         if (($manifest['format'] ?? '') !== 'office-runtime-v1' || ($manifest['product'] ?? '') !== 'office'
-            || ($manifest['source_protection'] ?? '') !== 'ioncube'
+            || ! in_array($manifest['source_protection'] ?? '', ['none', 'ioncube'], true)
             || ! in_array($manifest['architecture'] ?? '', ['amd64', 'arm64'], true)
             || ! preg_match('/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/D', $manifest['version'] ?? '')
             || ! is_array($manifest['images'] ?? null) || count($manifest['images']) !== 5) {

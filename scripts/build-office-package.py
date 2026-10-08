@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Build owner-side protected Docker images and an Office runtime ZIP.
-Requires Docker and a licensed ionCube PHP 8.4 encoder. Never run on a client.
-"""
+"""Build an Office runtime ZIP on the owner build machine; encoding is optional."""
 import argparse, hashlib, json, os, re, shutil, subprocess, tempfile, zipfile
 from pathlib import Path
 
@@ -18,6 +16,9 @@ def build(args):
     office=Path(args.office).resolve()
     version=(office/'VERSION').read_text().strip()
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[\w.-]+)?',version): raise ValueError('Invalid Office version.')
+    if not args.encoder and not args.loader:
+        return build_standard(args,office,version,destination)
+    if not args.encoder or not args.loader:raise ValueError('Use both --encoder and --loader for optional source encoding.')
     encoder=Path(args.encoder).resolve()
     loader=Path(args.loader).resolve()
     if not encoder.is_file() or not loader.is_file(): raise ValueError('Licensed encoder and matching Linux PHP 8.4 ZTS loader are required.')
@@ -71,36 +72,47 @@ def build(args):
         # No unencoded app layer is an ancestor of the customer target.
         run('docker','run','--rm','--entrypoint','php',protected_image,'-r',
             "if(!extension_loaded('ionCube Loader') || !function_exists('sodium_crypto_sign_verify_detached')) exit(1); require '/app/vendor/autoload.php'; require '/app/bootstrap/app.php';")
-        images={'app':protected_image,'db':args.db,'redis':args.redis,'rdp-web':args.rdp_web,'rdp-core':args.rdp_core}
-        manifest={'format':'office-runtime-v1','product':'office','version':version,
-                  'architecture':args.arch,'source_protection':'ioncube','images':[]}
-        for role,ref in images.items():
-            if role!='app':run('docker','pull','--platform','linux/'+args.arch,ref)
-            info=json.loads(run('docker','image','inspect',ref,capture_output=True,text=True).stdout)[0]
-            if info['Architecture']!=args.arch:raise ValueError('Wrong image architecture: '+ref)
-            archive=work/(role+'.tar')
-            run('docker','save','-o',str(archive),ref)
-            manifest['images'].append({'role':role,'ref':ref,'image_id':info['Id'],
-                                      'archive':'images/'+role+'.tar','sha256':sha(archive)})
-        destination.parent.mkdir(parents=True,exist_ok=True)
-        # Publish only a finished archive. An interrupted build leaves no
-        # apparently installable ZIP and never replaces an existing release.
-        with tempfile.NamedTemporaryFile(dir=destination.parent,prefix='.office-runtime-',suffix='.partial',delete=False) as stream:
-            pending=Path(stream.name)
-        try:
-            with zipfile.ZipFile(pending,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1,allowZip64=True) as bundle:
-                bundle.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False,separators=(',',':')))
-                for role in images:bundle.write(work/(role+'.tar'),'images/'+role+'.tar')
-            os.link(pending,destination)
-        finally:pending.unlink(missing_ok=True)
-        print('Bundle:',destination)
-        print('SHA256:',sha(destination))
-        print('Release:',version)
+        export_bundle(args,protected_image,version,'ioncube',work,destination)
+
+def build_standard(args,office,version,destination):
+    image='office-runtime:'+version
+    if 'FROM production AS managed' not in (office/'Dockerfile').read_text():
+        raise ValueError('Apply the Office helper integration before building a managed package.')
+    run('docker','build','--target','managed','--build-arg','APP_RELEASE_VERSION='+version,'-t',image,str(office))
+    run('docker','run','--rm','--entrypoint','php',image,'-r',
+        "if(!is_file('/app/office-managed') || !function_exists('sodium_crypto_sign_verify_detached')) exit(1); require '/app/vendor/autoload.php'; require '/app/bootstrap/app.php';")
+    with tempfile.TemporaryDirectory(prefix='office-runtime-') as temp:
+        export_bundle(args,image,version,'none',Path(temp),destination)
+
+def export_bundle(args,image,version,protection,work,destination):
+    images={'app':image,'db':args.db,'redis':args.redis,'rdp-web':args.rdp_web,'rdp-core':args.rdp_core}
+    manifest={'format':'office-runtime-v1','product':'office','version':version,
+              'architecture':args.arch,'source_protection':protection,'images':[]}
+    for role,ref in images.items():
+        if role!='app':run('docker','pull','--platform','linux/'+args.arch,ref)
+        info=json.loads(run('docker','image','inspect',ref,capture_output=True,text=True).stdout)[0]
+        if info['Architecture']!=args.arch:raise ValueError('Wrong image architecture: '+ref)
+        archive=work/(role+'.tar')
+        run('docker','save','-o',str(archive),ref)
+        manifest['images'].append({'role':role,'ref':ref,'image_id':info['Id'],
+                                  'archive':'images/'+role+'.tar','sha256':sha(archive)})
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=destination.parent,prefix='.office-runtime-',suffix='.partial',delete=False) as stream:
+        pending=Path(stream.name)
+    try:
+        with zipfile.ZipFile(pending,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1,allowZip64=True) as bundle:
+            bundle.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False,separators=(',',':')))
+            for role in images:bundle.write(work/(role+'.tar'),'images/'+role+'.tar')
+        os.link(pending,destination)
+    finally:pending.unlink(missing_ok=True)
+    print('Bundle:',destination)
+    print('SHA256:',sha(destination))
+    print('Release:',version)
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--office',required=True)
-    parser.add_argument('--encoder',required=True,help='Licensed ionCube CLI supporting -84.')
-    parser.add_argument('--loader',required=True,help='Matching PHP 8.4 Linux ZTS loader ioncube_loader_lin_8.4_ts.so.')
+    parser.add_argument('--encoder',help='Optional licensed ionCube CLI supporting -84.')
+    parser.add_argument('--loader',help='Matching PHP 8.4 ZTS loader; only required with --encoder.')
     parser.add_argument('--output',required=True)
     parser.add_argument('--arch',choices=['amd64','arm64'],default='amd64')
     parser.add_argument('--db',default='mariadb:10.11.18')

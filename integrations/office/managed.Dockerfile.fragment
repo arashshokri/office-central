@@ -1,0 +1,10 @@
+
+# Standard managed Office image. Source encoding is an optional owner feature.
+FROM production AS managed
+USER root
+LABEL ir.ponet.office.source-protection="none"
+RUN printf 'office-helper/v2\n' > /app/office-managed && chmod 0644 /app/office-managed
+USER www-data
+# Keep ordinary source builds equivalent to the existing production target.
+FROM production AS default
+# END OFFICE STANDARD MANAGED TARGET

@@ -1,5 +1,8 @@
 """Owner source handling: reject unsafe archives and preserve original files."""
 import importlib.util
+import argparse
+import hashlib
+import json
 from pathlib import Path
 import stat
 import subprocess
@@ -7,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('office_helper', ROOT/'scripts/office-helper.py')
@@ -84,6 +88,31 @@ class OfficeSourceTest(unittest.TestCase):
             with self.subTest(source=source, ref=ref), tempfile.TemporaryDirectory() as temp:
                 with self.assertRaises(ValueError):
                     helper.resolve_source(source, ref, Path(temp))
+
+    def test_standard_builder_creates_a_verified_runtime_without_an_encoder(self):
+        spec=importlib.util.spec_from_file_location('office_package', ROOT/'scripts/build-office-package.py')
+        builder=importlib.util.module_from_spec(spec);spec.loader.exec_module(builder)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source';source.mkdir()
+            (source/'VERSION').write_text('3.8.20')
+            (source/'Dockerfile').write_text('FROM production AS managed')
+            calls=[]
+            def docker(*args, **kwargs):
+                calls.append(args)
+                if args[1:3]==('image','inspect'):
+                    return subprocess.CompletedProcess(args,0,json.dumps([{'Architecture':'amd64','Id':'sha256:'+'a'*64}]))
+                if args[1]=='save':Path(args[3]).write_bytes(('fixture:'+args[4]).encode())
+                return subprocess.CompletedProcess(args,0,'')
+            args=argparse.Namespace(office=str(source),output=str(root/'bundle.zip'),encoder=None,loader=None,
+                                   arch='amd64',db='db:1',redis='redis:1',rdp_web='rdp-web:1',rdp_core='rdp-core:1')
+            with patch.object(builder,'run',side_effect=docker):builder.build(args)
+            with zipfile.ZipFile(root/'bundle.zip') as bundle:
+                manifest=json.loads(bundle.read('manifest.json'))
+                self.assertEqual(manifest['source_protection'],'none')
+                self.assertEqual({image['role'] for image in manifest['images']},{'app','db','redis','rdp-web','rdp-core'})
+                for image in manifest['images']:
+                    self.assertEqual(image['sha256'],hashlib.sha256(bundle.read(image['archive'])).hexdigest())
+            self.assertEqual(calls[0][1:5],('build','--target','managed','--build-arg'))
 
 
 if __name__ == '__main__':

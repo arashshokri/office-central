@@ -35,6 +35,13 @@ class RuntimePackageTest extends TestCase
         try{$this->expectException(\InvalidArgumentException::class);app(PackageService::class)->inspect($file);}
         finally{unlink($file->getRealPath());}
     }
+    public function test_ready_docker_bundle_does_not_require_commercial_source_encoding():void {
+        $entries=$this->entries();$manifest=json_decode($entries['manifest.json'],true);
+        $manifest['source_protection']='none';$entries['manifest.json']=json_encode($manifest);
+        $file=$this->zip($entries);
+        try{$result=app(PackageService::class)->inspect($file);$this->assertSame('none',$result['runtime_manifest']['source_protection']);}
+        finally{unlink($file->getRealPath());}
+    }
     public function test_changed_image_archive_is_rejected():void {
         $entries=$this->entries();$entries['images/app.tar']='tampered';
         $file=$this->zip($entries);

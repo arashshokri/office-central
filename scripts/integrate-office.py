@@ -74,6 +74,14 @@ elif args.update:
         end=len(text.rstrip())
     docker.write_text(text[:start]+(source/'customer.Dockerfile.fragment').read_text(encoding='utf-8').strip()+text[end:], encoding='utf-8', newline='\n')
 console=office/'routes/console.php';text=console.read_text(encoding='utf-8')
+docker=office/'Dockerfile';dockerText=docker.read_text(encoding='utf-8')
+if 'FROM production AS managed' not in dockerText:
+    docker.write_text(dockerText+'\n'+(source/'managed.Dockerfile.fragment').read_text(encoding='utf-8'),encoding='utf-8',newline='\n')
+elif args.update:
+    start=dockerText.index('# Standard managed Office image.')
+    marker='# END OFFICE STANDARD MANAGED TARGET'
+    end=dockerText.index(marker,start)+len(marker)
+    docker.write_text(dockerText[:start]+(source/'managed.Dockerfile.fragment').read_text(encoding='utf-8').strip()+dockerText[end:],encoding='utf-8',newline='\n')
 marker='// Managed Office: suspend scheduled work without deleting data.'
 if marker not in text:
     text+='\n'+marker+'\n'
@@ -85,4 +93,24 @@ for name in ['.env.example','.env.docker.example']:
     if 'OFFICE_LICENSE_ENABLED=' not in text:
         text+='\n# Enabled automatically in protected customer packages; keep false for legacy owner installs.\nOFFICE_LICENSE_ENABLED=false\nOFFICE_AGENT_STATE_DIR=/run/office-agent/public\nOFFICE_AGENT_SOCKET=/run/office-agent/control/control.sock\nOFFICE_AGENT_CONTROL_TOKEN=\n'
         file.write_text(text, encoding='utf-8', newline='\n')
+# Existing deployments gain two read-only helper mounts on their next ordinary
+# Office update. No credentials, volumes, ports or proxy settings are changed.
+compose=office/'compose.yaml';text=compose.read_text(encoding='utf-8')
+if '/run/office-agent/control:ro' not in text:
+    anchor='    - app_storage:/app/storage\n'
+    if text.count(anchor)!=1:raise SystemExit('Unexpected Office storage anchor; merge helper mounts manually.')
+    text=text.replace(anchor,anchor+'    - ${OFFICE_AGENT_ROOT:-/var/lib/office-helper}/agent/public:/run/office-agent/public:ro\n'
+                      +'    - ${OFFICE_AGENT_ROOT:-/var/lib/office-helper}/agent/control:/run/office-agent/control:ro\n')
+    compose.write_text(text,encoding='utf-8',newline='\n')
+layout=office/'resources/views/layouts/app.blade.php';text=layout.read_text(encoding='utf-8')
+if "route('office-agent.license')" not in text:
+    anchor='                            @if($settingsVisible)'
+    if anchor not in text:raise SystemExit('Office sidebar anchor is missing; merge helper link manually.')
+    link="                            @if(auth()->user()?->role === 'admin')\n"
+    link+="                            <li class=\"nav-item\"><a class=\"nav-link\" href=\"{{ route('office-agent.license') }}\"><i class=\"fas fa-key\"></i><span class=\"nav-label\">مجوز و helper</span></a></li>\n                            @endif\n\n"
+    layout.write_text(text.replace(anchor,link+anchor,1),encoding='utf-8',newline='\n')
+dockerIgnore=office/'.dockerignore';text=dockerIgnore.read_text(encoding='utf-8')
+for pattern in ['.office-central-fix', 'dist', 'agent', '__pycache__']:
+    if pattern not in text.splitlines():text+='\n'+pattern+'\n'
+dockerIgnore.write_text(text,encoding='utf-8',newline='\n')
 print('Office licensing integration installed; unrelated edits preserved.')

@@ -1,99 +1,72 @@
-# نصب Office با agent خود محصول
+# helper هوشمند Office
 
-Office اکنون agent کامپایل‌شده، helper ساخت بسته و اتصال مجوز را در همین مخزن دارد.
-برای ساخت این ابزارها نیازی به checkout پروژه Central نیست.
+helper بخشی از خود Office است. نصب موجود را شناسایی می‌کند، سلامت برنامه و سخت‌افزار را بررسی می‌کند و آن را با کد یک‌بارمصرف به `update.ponet.ir` متصل می‌کند. مدیریت مجوزها در `scm.ponet.ir` است.
 
-- `agent/*.go`: نصب، ادامه نصب، دریافت نسخه، سرویس systemd، اثبات زنده UUID و فعال‌سازی مجدد.
-- `office-install.sh`: ورودی نصب مشتری؛ فقط باینری معتبر را از update.ponet.ir می‌گیرد.
-- `scripts/office-helper.py`: ابزار مالک برای ورودی پوشه، ZIP سورس یا مخزن GitHub.
-- `app/Services/OfficeLicense.php`: بررسی امضای مجوز و سخت‌افزار داخل Office.
-- `app/Providers/OfficeLicenseServiceProvider.php`: صفحه قفل و فعال‌سازی مجدد بدون حذف داده.
+## Office روی سرور شما نصب است
 
-## ۱. ساخت باینری‌های agent
+۱. ابتدا Central موجود را ارتقا دهید:
 
-روی Linux سازنده با Go:
+```bash
+cd /opt/office-central
+sudo bash centralctl.sh update v1.4.0-rc.5
+sudo bash centralctl.sh doctor
+```
 
-~~~bash
-bash scripts/build-office-agent.sh
-~~~
+در Nginx Proxy Manager مرکزی، `update.ponet.ir` را با HTTPS به `office-central-update`، پورت `80` و scheme برابر `http` روی شبکهٔ `proxynet` متصل کنید. پنل `scm.ponet.ir` به `office-central-web:80` متصل می‌ماند.
 
-باینری‌های amd64 و arm64 و checksum در `dist/office-agent` ساخته می‌شوند.
-Central همین کد پروتکل را برای سروکردن agent مشتری می‌سازد؛ کلید امضا در Central است و داخل سورس یا باینری نیست.
+۲. در پوشهٔ نصب Office، همان مدیر نسخهٔ موجود را اجرا کنید:
 
-## ۲. ورودی نسخهٔ محصول و ساخت بسته مشتری
+```bash
+sudo bash office-deploy.sh
+```
 
-ساخت روی Linux مورد اعتماد مالک با Docker/BuildKit، Python 3، encoder دارای مجوز ionCube برای PHP 8.4
-و Loader نوع ZTS همان معماری انجام می‌شود. ابزار مسیر سورس مالک را تغییر نمی‌دهد؛ snapshot موقت می‌سازد.
-کد ورودی هنگام Docker build اجرا می‌شود؛ فقط سورس مورد اعتماد خودتان را بدهید.
+گزینهٔ **1 — Update** و نسخهٔ **v3.8.20** را انتخاب کنید. این یک ارتقای معمولی با حفظ داده و تنظیمات است. بعد از ارتقا در منوی Office گزینهٔ **مجوز و helper** ظاهر می‌شود. کنترل مجوز تا اتصال موفق helper فعال نمی‌شود.
 
-پوشهٔ محلی:
+۳. در Central مشتری فعال و محصول Office با slug برابر `office` داشته باشید. در **لایسنس جدید**، گزینهٔ پیش‌فرض **اتصال Office موجود** را انتخاب کنید. برای این مسیر نسخه اختیاری است؛ هیچ بسته‌ای لازم نیست. اگر نسخه تعیین کنید، نسخهٔ Office نصب‌شده باید دقیقاً با آن یکسان باشد.
 
-~~~bash
-python3 scripts/office-helper.py build \
-  --source /srv/src/office \
-  --encoder /opt/ioncube/ioncube_encoder \
-  --loader /opt/ioncube/ioncube_loader_lin_8.4_ts.so \
-  --output /srv/releases/office-runtime-3.8.19-amd64.zip
-~~~
+۴. روی همان سرور Office اجرا کنید:
 
-برای ZIP سورس، مقدار `--source /srv/uploads/office-source.zip` بدهید.
-برای GitHub، `--source https://github.com/arashshokri/office --ref v3.8.19` بدهید؛
-ref باید تگ یا commit مشخص باشد. برای مخزن خصوصی از credential helper خود Git استفاده کنید؛
-توکن را داخل URL یا آرگومان قرار ندهید. نسخهٔ نهایی از `VERSION` سورس خوانده می‌شود.
-helper اتصال مجوز و agent این نسخه را در snapshot اعمال می‌کند و بستهٔ محافظت‌شده می‌سازد.
-مشتری ZIP سورس یا دسترسی GitHub شما را دریافت نمی‌کند.
+```bash
+curl --fail --proto '=https' --tlsv1.2 https://update.ponet.ir/agent/install.sh -o office-install.sh && sudo bash office-install.sh
+```
 
-## ۳. رساندن نسخه به Central
+`curl`، `python3` و گواهی‌های CA باید موجود باشند. helper نصب موجود را تشخیص می‌دهد؛ کد اتصال را هنگام درخواست وارد کنید. کد پس از سلامت برنامه، دیتابیس، Redis، storage، migrationها و آماده‌شدن سرویس helper مصرف می‌شود. خطای اتصال به نصب مجدد Office نیاز ندارد؛ همین فرمان را تکرار کنید.
 
-دو راه دارید:
+در این حالت helper فقط سرویس خودش را اضافه می‌کند. کانتینرهای Office را دوباره نمی‌سازد، migration اجرا نمی‌کند و کاربران، APP_KEY، دیتابیس، فایل‌ها، شبکه و پروکسی را تغییر نمی‌دهد. اطلاعات helper در `/var/lib/office-helper` نگهداری می‌شوند. برای انتقال کامل سرور این مسیر را هم همراه دیتابیس، فایل‌ها و تنظیمات بکاپ بگیرید.
 
-1. ZIP خروجی محافظت‌شده را در «نسخه‌ها»ی scm.ponet.ir برای محصول با slug دقیق `office` بارگذاری و منتشر کنید.
-2. ZIP را با نام دقیق `office-runtime-VERSION-amd64.zip` به GitHub Release همان تگ محصول پیوست کنید.
-   در Central مخزن را برای محصول Office متصل و «همگام‌سازی» را بزنید. Central فایل نصب پیوست‌شده را
-   می‌گیرد، manifest، نسخه، SHA-256 و نقش هر image را بررسی می‌کند؛ Source code.zip را نصب نمی‌کند.
-   برای arm64 مقدار CENTRAL_RUNTIME_ARCHITECTURE=arm64 در Central و نام asset متناظر لازم است.
-
-آپلود ZIP سورس به صفحهٔ نسخه‌ها جایگزین مرحلهٔ ساخت نیست. ساخت Docker/encoder را داخل PHP وب یا روی مشتری اجرا نکنید.
-
-## ۴. مشتری و کد نصب
-
-در Central مشتری فعال و لایسنس «نصب خودکار یک‌بار مصرف» بسازید؛ نسخه منتشرشده،
-آدرس HTTPS مشتری، ایمیل مدیر اولیه و نام واقعی شبکه مشترک NPM مشتری را تعیین کنید.
-دامنه update.ponet.ir در NPM مرکزی به `http://office-central-update:80` متصل باشد.
-
-روی Ubuntu/Debian مشتری با UUID یکتا، systemd و اینترنت:
-
-~~~bash
-sudo apt-get update && sudo apt-get install -y curl python3 ca-certificates
-curl --fail --proto '=https' --tlsv1.2 https://update.ponet.ir/agent/install.sh -o office-install.sh &&
-sudo bash office-install.sh
-~~~
-
-کد را فقط هنگام درخواست helper وارد کنید. نصب ناموفق کد را مصرف نمی‌کند؛ همان دستگاه قابل resume است.
-کد بعد از سلامت برنامه، دیتابیس، Redis، storage و migration مصرف می‌شود و مجوز اجرای نصب باقی می‌ماند.
-NPM مشتری در همان شبکه به `http://office-web:8080` وصل شود و SSL و Force SSL فعال باشند.
-اطلاعات اولیه مدیر در `/opt/office/initial-admin.json` فقط برای root ذخیره می‌شود.
-
-~~~bash
+```bash
 sudo office-agent status
-sudo office-agent resume
-sudo office-agent update
-~~~
+sudo journalctl -u office-agent -n 100 --no-pager
+```
 
-## ۵. انتقال و فعال‌سازی مجدد
+به‌روزرسانی خود Office موجود همچنان با **Update** مدیر نسخهٔ همان نصب انجام می‌شود؛ اتصال helper جایگزین برنامه یا دیتابیس نمی‌شود.
 
-کپی روی سخت‌افزار جدید دسترسی آن کپی را قفل می‌کند. نصب اولیه دست‌نخورده می‌ماند.
-مدیر مشتری در `/license` کد جدید همان مشتری/محصول را وارد می‌کند یا root فرمان زیر را اجرا می‌کند:
+## مشتری جدید و سرور خالی
 
-~~~bash
-sudo office-agent reactivate
-~~~
+یک بار روی ماشین سازندهٔ خودتان با Linux، Docker و Python 3 از سورس مورد اعتماد Office بستهٔ آماده بسازید:
 
-هیچ volume یا دیتابیس در این مسیر حذف نمی‌شود. انتقال نصب قبلی با credentials اصلی و `--adopt-env` انجام می‌شود؛
-هرگز برای رفع قفل از `down -v`، `migrate:fresh` یا حذف پوشه اطلاعات استفاده نکنید.
+```bash
+python3 scripts/office-helper.py build --source /srv/src/office --output /srv/releases/office-runtime-3.8.20-amd64.zip
+```
 
-## وضعیت اعتبارسنجی
+ابزار داخل مخزن Office است. ورودی می‌تواند پوشه، ZIP سورس یا لینک GitHub با تگ مشخص باشد:
 
-آزمون‌های پروتکل، UUID، عدم مصرف کد در شکست و بررسی بسته خودکار هستند.
-تا encoder و Docker در دسترس نباشد، ساخت بستهٔ واقعی و نصب کامل مشتری تأیید نشده است.
-پیش از تحویل، نصب، قطع شبکه، resume، کلون سخت‌افزار و فعال‌سازی مجدد را روی VM آزمایشی با داده نمونه اجرا کنید.
+```bash
+python3 scripts/office-helper.py build --source https://github.com/arashshokri/office --ref v3.8.20 --output /srv/releases/office-runtime-3.8.20-amd64.zip
+```
+
+خروجی را در **نسخه‌ها** برای محصول Office بارگذاری و منتشر کنید. یا آن را با نام `office-runtime-VERSION-amd64.zip` به GitHub Release همان نسخه پیوست و مخزن را در Central همگام کنید. ZIP سورس ورودی ابزار سازنده است؛ مشتری imageهای آماده را دریافت می‌کند. برای arm64 روی سازندهٔ همان معماری از `--arch arm64` و در Central از `CENTRAL_RUNTIME_ARCHITECTURE=arm64` استفاده کنید.
+
+در Central نوع مجوز **نصب روی سرور جدید**، بستهٔ منتشرشده، دامنهٔ HTTPS مشتری، ایمیل مدیر اولیه و تنظیم پروکسی را تعیین کنید. روی سرور مشتری همان فرمان مرحلهٔ ۴ را اجرا کنید؛ helper نصب تازه را تشخیص می‌دهد و بستهٔ همان مجوز را دریافت می‌کند. در NPM مشتری مقصد `office-web:8080` با scheme برابر `http` است. DNS و گواهی SSL باید آماده باشند. اطلاعات مدیر اولیه در `/opt/office/initial-admin.json` فقط برای root ذخیره می‌شوند.
+
+## انتقال سرور و فعال‌سازی مجدد
+
+helper شناسهٔ UUID و machine-id میزبان را بررسی می‌کند. کپی نصب متصل روی سخت‌افزار دیگر قفل می‌شود و نصب اصلی فعال می‌ماند. مدیر مشتری در صفحهٔ **مجوز و helper** (`/license`) کد جدید همان مشتری/محصول را وارد می‌کند؛ یا مدیر سرور `sudo office-agent reactivate` را اجرا می‌کند. مجوز جایگزین فقط پس از بررسی سلامت مصرف می‌شود. دیتابیس و فایل‌ها حذف نمی‌شوند.
+
+قطع ارتباط با Central به‌تنهایی قفل جدید ایجاد نمی‌کند؛ آخرین تصمیم امضاشده با اثبات زندهٔ سخت‌افزار بررسی می‌شود. سرویس محلی helper باید فعال بماند. در قفل، دسترسی کاری، پردازش صف و درگاه‌های terminal/RDP متوقف می‌شوند؛ ورود و فعال‌سازی مجدد در دسترس‌اند.
+
+## محافظت سورس و اعتبارسنجی
+
+ionCube برای اتصال helper یا ساخت عادی بسته الزامی نیست. برای کدگذاری تجاری اختیاری، هر دو آرگومان `--encoder` و `--loader` متناظر PHP 8.4 ZTS را به سازنده بدهید. image عادی PHP را از کاربر دارای root پنهان نمی‌کند؛ UUID نیز در برابر مالک hypervisor تضمین ضدکپی مطلق ندارد.
+
+تست‌های پروتکل، اتصال غیرمخرب، مصرف کد پس از سلامت، کلون و فعال‌سازی اجرا شده‌اند. اجرای واقعی Docker و اتصال روی سرور شما در این محیط انجام نشده است؛ ابتدا روی یک VM با دادهٔ نمونه بررسی کنید.

@@ -17,10 +17,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
-const version = "1.4.0-rc.4"
+const version = "1.4.0-rc.5"
 const contextPrefix = "office-agent/v2\n"
 
 var b64 = base64.RawURLEncoding
@@ -65,17 +66,19 @@ type Deployment struct {
 	Proxy string `json:"proxy_network"`
 }
 type State struct {
-	Kind         string     `json:"kind"`
-	Protocol     int        `json:"protocol"`
-	Installation string     `json:"installation_id"`
-	Sequence     uint64     `json:"sequence"`
-	Hardware     string     `json:"hardware_fingerprint"`
-	Presented    string     `json:"presented_fingerprint"`
-	Access       string     `json:"access"`
-	Completed    bool       `json:"completed"`
-	Message      string     `json:"message"`
-	Deployment   Deployment `json:"deployment"`
-	Package      Package    `json:"package"`
+	ActivationMode     string     `json:"activation_mode"`
+	ApplicationVersion string     `json:"application_version"`
+	Kind               string     `json:"kind"`
+	Protocol           int        `json:"protocol"`
+	Installation       string     `json:"installation_id"`
+	Sequence           uint64     `json:"sequence"`
+	Hardware           string     `json:"hardware_fingerprint"`
+	Presented          string     `json:"presented_fingerprint"`
+	Access             string     `json:"access"`
+	Completed          bool       `json:"completed"`
+	Message            string     `json:"message"`
+	Deployment         Deployment `json:"deployment"`
+	Package            Package    `json:"package"`
 }
 type Identity struct {
 	Endpoint       string
@@ -188,6 +191,17 @@ func openClient(root, endpoint string) (*Client, error) {
 	if e := os.Chmod(private, 0700); e != nil {
 		return nil, e
 	}
+	// Concurrent setup launches must share one pinned identity. Generating a
+	// second key before the process lock could overwrite an active reservation.
+	identityLock, e := os.OpenFile(filepath.Join(private, "identity.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if e != nil {
+		return nil, e
+	}
+	defer identityLock.Close()
+	if e = syscall.Flock(int(identityLock.Fd()), syscall.LOCK_EX); e != nil {
+		return nil, e
+	}
+	defer syscall.Flock(int(identityLock.Fd()), syscall.LOCK_UN)
 	file := filepath.Join(private, "identity.json")
 	raw, e := os.ReadFile(file)
 	if e == nil {
@@ -352,6 +366,11 @@ func (c *Client) activate(code, action string, h Hardware) (State, error) {
 		id = c.Identity.ReactivationID
 	}
 	body := map[string]any{"hardware": h, "license_key": code, "hostname": host, "client_request_id": id, "device_public_key": b64.EncodeToString(ed25519.PrivateKey(key).Public().(ed25519.PublicKey)), "agent_version": version}
+	if existing, err := c.existingOffice(); err != nil {
+		return State{}, err
+	} else if existing != nil {
+		body["intent"] = "connect"
+	}
 	if action == "reactivate" {
 		body["health_ok"] = true
 	}

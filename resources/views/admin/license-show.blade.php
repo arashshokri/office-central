@@ -24,7 +24,7 @@
             <div><dt>{{ __('ui.field_license_key_prefix') }}</dt><dd dir="ltr">{{ $license->license_key_prefix }}••••</dd></div>
             <div><dt>{{ __('ui.max_installations') }}</dt><dd>{{ $license->max_installations }}</dd></div>
             <div><dt>{{ __('ui.state_revision') }}</dt><dd>{{ $license->state_revision }}</dd></div>
-            <div><dt>{{ __('ui.install_mode') }}</dt><dd>{{ $license->activation_mode === 'installer_once' ? __('ui.installer_once') : __('ui.legacy_license') }}</dd></div>
+            <div><dt>{{ __('ui.install_mode') }}</dt><dd>{{ __('ui.'.($license->activation_mode === 'attach_once' ? 'attach_once' : ($license->activation_mode === 'installer_once' ? 'installer_once' : 'legacy_license'))) }}</dd></div>
             <div><dt>{{ __('ui.code_consumed_at') }}</dt><dd>{{ $license->consumed_at?->toISOString() ?? '—' }}</dd></div>
         </dl>
     </section>
@@ -50,13 +50,18 @@
     </section>
 </div>
 
-@if($license->activation_mode === 'installer_once')
+@if(in_array($license->activation_mode, ['installer_once', 'attach_once']))
 <section class="panel installer-guide">
-    <div class="section-heading"><h2>{{ __('ui.install_office_for_customer') }}</h2></div>
+    <div class="section-heading"><h2>{{ __($license->activation_mode === 'attach_once' ? 'ui.connect_existing_office' : 'ui.install_office_for_customer') }}</h2></div>
     <ol>
         <li>{{ __('ui.installer_server_prerequisites') }}</li>
+        @if($license->activation_mode === 'attach_once')
+        <li>{{ __('ui.attach_upgrade_first') }}</li>
+        <li>{{ __('ui.attach_preserves_data') }}</li>
+        @else
         <li>{{ __('ui.installer_proxy_step') }}</li>
         <li>{{ __('ui.installer_license_prompt') }}</li>
+        @endif
     </ol>
     @if($license->consumed_at)
         <p>{{ __('ui.installer_consumed_help') }}</p>

@@ -46,7 +46,7 @@ func (c *Client) composeInput(input io.Reader, args ...string) error {
 	return run(input, "docker", append(base, args...)...)
 }
 func validateManifest(m Manifest) error {
-	if m.Format != "office-runtime-v1" || m.Product != "office" || m.Protection != "ioncube" || m.Architecture != runtime.GOARCH || len(m.Images) != 5 {
+	if m.Format != "office-runtime-v1" || m.Product != "office" || (m.Protection != "ioncube" && m.Protection != "none") || m.Architecture != runtime.GOARCH || len(m.Images) != 5 {
 		return errors.New("incompatible or unprotected runtime manifest")
 	}
 	roles := map[string]bool{}
@@ -354,6 +354,12 @@ func (c *Client) writeCompose(s State) error {
 	return atomicJSON(filepath.Join(c.Root, "compose.json"), model, 0600)
 }
 func (c *Client) health(expected ...string) error {
+	if profile, err := c.existingOffice(); err != nil {
+		return err
+	} else if profile != nil {
+		_, err = c.existingHealth()
+		return err
+	}
 	args := []string{"exec", "-T", "app", "php", "artisan", "office-agent:health"}
 	if len(expected) > 0 {
 		args = append(args, "--expected-version="+expected[0])

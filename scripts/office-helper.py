@@ -69,7 +69,8 @@ def resolve_source(source, ref, workspace):
         shutil.copytree(source, office, symlinks=True,
                         ignore=shutil.ignore_patterns('.git', '.env', '.env.docker', '.env.local',
                                                      'node_modules', 'vendor', 'storage', 'dist',
-                                                     'pre-update-backups', '*.zip', '*.log'))
+                                                     'pre-update-backups', '.office-central-fix', '.agents',
+                                                     '__pycache__', '*.zip', '*.log'))
         return office
     if source.is_file() and zipfile.is_zipfile(source):
         digest = hashlib.sha256()
@@ -88,8 +89,8 @@ def main():
     parser.add_argument('command', choices=['build'])
     parser.add_argument('--source', required=True, help='Owner Office folder, source ZIP or HTTPS GitHub repo.')
     parser.add_argument('--ref', help='Explicit GitHub tag or commit; credentials use Git credential helper.')
-    parser.add_argument('--encoder', required=True)
-    parser.add_argument('--loader', required=True)
+    parser.add_argument('--encoder', help='Optional licensed encoder for source protection.')
+    parser.add_argument('--loader', help='Required only when --encoder is supplied.')
     parser.add_argument('--arch', choices=['amd64', 'arm64'], default='amd64')
     parser.add_argument('--output', required=True, help='Destination runtime ZIP (must not exist).')
     args = parser.parse_args()

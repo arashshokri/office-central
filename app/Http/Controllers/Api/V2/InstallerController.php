@@ -44,9 +44,9 @@ final class InstallerController extends Controller
     public function complete(Request $request, InstallerService $installer)
     {
         $data = $request->validate(array_merge($this->hardwareRules(), [
-            'release_id' => ['required', 'uuid'],
-            'package_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/D'],
-            'application_version' => ['required', 'string', 'max:50'],
+            'release_id' => ['nullable', 'uuid'],
+            'package_sha256' => ['nullable', 'regex:/^[a-f0-9]{64}$/D'],
+            'application_version' => ['required', 'string', 'max:50', 'regex:/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/D'],
             'health_ok' => ['required', 'accepted'],
         ]));
         // Accepted form values must not weaken the service's strict receipt.
@@ -70,6 +70,7 @@ final class InstallerController extends Controller
             'client_request_id' => ['required', 'uuid'],
             'device_public_key' => ['required', 'regex:/^[A-Za-z0-9_-]{43}$/D'],
             'agent_version' => ['nullable', 'string', 'max:50'],
+            'intent' => ['nullable', 'in:install,connect'],
         ]));
     }
 
