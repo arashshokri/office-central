@@ -1,0 +1,27 @@
+name: Validate Office installation agent
+on:
+  push:
+    paths: ['agent/**', 'scripts/*office*', 'office-install.sh', '.github/workflows/office-agent.yml']
+  pull_request:
+    paths: ['agent/**', 'scripts/*office*', 'office-install.sh', '.github/workflows/office-agent.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  agent:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - run: cd agent && go test -race ./...
+      - run: bash scripts/build-office-agent.sh
+      - run: bash -n office-install.sh agent/install-docker.sh
+      - run: python3 scripts/office-helper.py --help
+      - run: python3 tests/Deployment/office_source_test.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: office-agent-linux
+          path: dist/office-agent/

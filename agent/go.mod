@@ -1,3 +1,3 @@
-module github.com/arashshokri/office-central/agent
+module github.com/arashshokri/office/agent
 
 go 1.22

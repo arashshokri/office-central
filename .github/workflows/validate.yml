@@ -17,6 +17,7 @@ jobs:
       - run: composer install --no-interaction --prefer-dist
       - run: php artisan test
       - run: bash tests/Deployment/centralctl_test.sh
+      - run: python3 tests/Deployment/office_source_test.py
       - run: sudo bash tests/Deployment/permissions_test.sh
       - name: Build restrictive checkout and verify unprivileged PHP
         run: |

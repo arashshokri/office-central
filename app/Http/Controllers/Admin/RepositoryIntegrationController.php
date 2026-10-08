@@ -59,17 +59,26 @@ class RepositoryIntegrationController extends Controller
         }
 
         try {
+            $isOffice = $integration->product?->slug === 'office';
             $response = Http::withHeaders($headers)->connectTimeout(5)->timeout(30)
-                ->get("https://api.github.com/repos/{$owner}/{$repository}/tags", ['per_page' => 50])
+                ->get("https://api.github.com/repos/{$owner}/{$repository}/".($isOffice ? 'releases' : 'tags'), ['per_page' => 100])
                 ->throw();
-            $tags = collect($response->json())->filter(fn ($tag) => is_array($tag) && isset($tag['name'], $tag['zipball_url']));
+            $tags = collect($response->json())->filter(fn ($tag) => is_array($tag))
+                ->filter(fn ($tag) => ! $isOffice || (! ($tag['draft'] ?? true)
+                    && ($integration->release_channel !== 'stable' || ! ($tag['prerelease'] ?? true))))
+                ->map(fn ($tag) => $isOffice ? array_merge($tag, ['name' => $tag['tag_name'] ?? '']) : $tag)
+                ->filter(fn ($tag) => preg_match('/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/D', $tag['name'] ?? ''));
             $tag = $tags->sort(fn ($a, $b) => version_compare(ltrim($b['name'], 'vV'), ltrim($a['name'], 'vV')))->first();
             if (! $tag || ! preg_match('/^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/', $tag['name'], $matches)) {
                 throw new \RuntimeException('No semantic version tag was found.');
             }
 
             $version = $matches[1];
-            if (Release::where('product_id', $integration->product_id)->where('version', $version)->where('channel', $integration->release_channel)->exists()) {
+            $existing = Release::where('product_id', $integration->product_id)->where('version', $version)->where('channel', $integration->release_channel)->first();
+            if ($existing) {
+                if ($isOffice && ! $existing->runtime_manifest) {
+                    throw new \RuntimeException(__('ui.repository_source_conflict'));
+                }
                 $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
 
                 return back()->with('success', __('ui.repository_already_synced'));
@@ -77,16 +86,47 @@ class RepositoryIntegrationController extends Controller
 
             $temporaryPath = tempnam(sys_get_temp_dir(), 'central-release-');
             try {
-                $zipballUrl = (string) $tag['zipball_url'];
-                $zipballHost = strtolower((string) parse_url($zipballUrl, PHP_URL_HOST));
-                if (parse_url($zipballUrl, PHP_URL_SCHEME) !== 'https' || ! in_array($zipballHost, ['api.github.com', 'codeload.github.com'], true)) {
-                    throw new \RuntimeException('GitHub returned an unexpected package URL.');
-                }
-                Http::withHeaders($headers)->connectTimeout(5)->timeout(180)->sink($temporaryPath)->get($zipballUrl)->throw();
-                $upload = new UploadedFile($temporaryPath, $tag['name'].'.zip', 'application/zip', null, true);
-                $inspection = $packages->inspect($upload);
-                $uuid = (string) Str::uuid();
+                $downloadHeaders = $headers;
+                $asset = null;
                 $filename = $tag['name'].'.zip';
+                if ($isOffice) {
+                    $architecture = config('office.runtime_architecture', 'amd64');
+                    if (! in_array($architecture, ['amd64', 'arm64'], true)) {
+                        throw new \RuntimeException('Invalid CENTRAL_RUNTIME_ARCHITECTURE.');
+                    }
+                    $filename = "office-runtime-{$version}-{$architecture}.zip";
+                    $assets = collect($tag['assets'] ?? [])->filter(fn ($item) => ($item['name'] ?? '') === $filename && ($item['state'] ?? '') === 'uploaded');
+                    if ($assets->count() !== 1 || ! is_int($assets->first()['id'] ?? null)) {
+                        throw new \RuntimeException(__('ui.repository_runtime_missing', ['filename' => $filename]));
+                    }
+                    $asset = $assets->first();
+                    if (($asset['size'] ?? 0) <= 0 || $asset['size'] > 20 * 1024 ** 3) {
+                        throw new \RuntimeException('Runtime asset size is invalid.');
+                    }
+                    $zipballUrl = "https://api.github.com/repos/{$owner}/{$repository}/releases/assets/{$asset['id']}";
+                    $downloadHeaders['Accept'] = 'application/octet-stream';
+                } else {
+                    $zipballUrl = (string) ($tag['zipball_url'] ?? '');
+                    $zipballHost = strtolower((string) parse_url($zipballUrl, PHP_URL_HOST));
+                    if (parse_url($zipballUrl, PHP_URL_SCHEME) !== 'https' || ! in_array($zipballHost, ['api.github.com', 'codeload.github.com'], true)) {
+                        throw new \RuntimeException('GitHub returned an unexpected package URL.');
+                    }
+                }
+                Http::withHeaders($downloadHeaders)->withOptions(['allow_redirects' => ['max' => 5, 'protocols' => ['https']]])
+                    ->connectTimeout(5)->timeout($isOffice ? 1800 : 180)->sink($temporaryPath)->get($zipballUrl)->throw();
+                $upload = new UploadedFile($temporaryPath, $filename, 'application/zip', null, true);
+                $inspection = $packages->inspect($upload);
+                if ($isOffice && (($inspection['runtime_manifest']['version'] ?? '') !== $version
+                    || ($inspection['runtime_manifest']['architecture'] ?? '') !== $architecture)) {
+                    throw new \RuntimeException('Runtime manifest does not match the GitHub release version or architecture.');
+                }
+                if ($asset && $upload->getSize() !== $asset['size']) {
+                    throw new \RuntimeException('Downloaded runtime size does not match GitHub.');
+                }
+                if ($asset && ! empty($asset['digest']) && ! hash_equals('sha256:'.$inspection['sha256'], $asset['digest'])) {
+                    throw new \RuntimeException('Runtime checksum does not match the GitHub asset digest.');
+                }
+                $uuid = (string) Str::uuid();
                 $path = "packages/{$integration->product_id}/{$uuid}/{$filename}";
                 $stream = fopen($temporaryPath, 'rb');
                 if ($stream === false) {
@@ -112,6 +152,7 @@ class RepositoryIntegrationController extends Controller
                     'package_path' => $path,
                     'package_size' => $inspection['size'],
                     'package_sha256' => $inspection['sha256'],
+                    'runtime_manifest' => $inspection['runtime_manifest'] ?? null,
                     'git_commit' => data_get($tag, 'commit.sha'),
                     'published_at' => $integration->auto_publish ? now() : null,
                 ]);

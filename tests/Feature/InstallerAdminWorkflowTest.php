@@ -36,6 +36,24 @@ class InstallerAdminWorkflowTest extends TestCase
         $this->assertSame(0, License::count());
     }
 
+    public function test_creation_page_renders_published_source_and_runtime_release_choices(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'active' => true]);
+        $customer = Customer::create(['name' => 'Customer form fixture', 'status' => 'active']);
+        $product = Product::create(['name' => 'Office form fixture', 'slug' => 'office', 'status' => 'active']);
+        foreach (['3.8.19' => null, '3.8.20' => ['version' => '3.8.20']] as $version => $manifest) {
+            Release::create(['product_id' => $product->id, 'version' => $version, 'channel' => 'stable',
+                'status' => 'published', 'source_type' => 'manual', 'runtime_manifest' => $manifest,
+                'package_path' => $version.'.zip', 'package_sha256' => str_repeat('a', 64)]);
+        }
+
+        $this->actingAs($admin)->get('/licenses/create')->assertOk()
+            ->assertSee($customer->name)->assertSee($product->name)
+            ->assertSee('3.8.19')->assertSee('3.8.20')
+            ->assertSee(__('ui.source_archive'))->assertSee(__('ui.protected_runtime'))
+            ->assertDontSee(__('ui.protected_release_required'));
+    }
+
     public function test_installer_license_shows_safe_customer_command_and_consumed_code_guidance(): void
     {
         $admin = User::factory()->create(['role' => 'admin', 'active' => true]);

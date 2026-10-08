@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0-rc.4
+
+- Install the standalone Go agent, customer launcher, owner source builder and validation workflow in the Office repository itself.
+- Build protected Office runtime bundles from an owner folder, source ZIP or an explicitly selected GitHub ref without changing the original checkout.
+- Import Office GitHub release runtime assets instead of source archives; verify manifest version, architecture, image hashes and GitHub asset digest.
+- Explain missing build assets and source-version conflicts in repository sync; retain manual runtime uploads.
+- Add populated license-form, GitHub delivery and unsafe source archive regression coverage.
+
 ## 1.4.0-rc.3
 
 - Version panel/login CSS and JavaScript URLs to bypass stale proxy/CDN asset responses.

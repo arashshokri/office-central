@@ -27,4 +27,5 @@ agent
 integrations
 scripts
 .github
+.build-validation
 *.log

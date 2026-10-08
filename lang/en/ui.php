@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'repository_office_runtime_help' => 'For Office, attach office-runtime-VERSION-amd64.zip to the matching GitHub release. Sync imports the protected runtime asset. Convert source ZIPs with the owner helper before publication.',
+    'repository_runtime_missing' => 'GitHub release is missing :filename. Build it with scripts/office-helper.py and attach it to the release.',
+    'repository_source_conflict' => 'This version already contains a source archive. Publish a new version with a protected runtime bundle.',
     'state_pending' => 'Installation pending',
     'app' => 'Office Central', 'dashboard' => 'Dashboard', 'customers' => 'Customers', 'products' => 'Products', 'releases' => 'Releases',
     'licenses' => 'Licenses', 'installations' => 'Installations', 'security_events' => 'Security events', 'audit_logs' => 'Audit logs',

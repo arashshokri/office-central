@@ -2,7 +2,7 @@
 """Build owner-side protected Docker images and an Office runtime ZIP.
 Requires Docker and a licensed ionCube PHP 8.4 encoder. Never run on a client.
 """
-import argparse, hashlib, json, re, shutil, subprocess, tempfile, zipfile
+import argparse, hashlib, json, os, re, shutil, subprocess, tempfile, zipfile
 from pathlib import Path
 
 def run(*args, **kwargs):
@@ -13,6 +13,8 @@ def sha(path):
         for chunk in iter(lambda:stream.read(1024*1024),b''): digest.update(chunk)
     return digest.hexdigest()
 def build(args):
+    destination=Path(args.output).resolve()
+    if destination.exists():raise ValueError('Refusing to overwrite an existing release archive.')
     office=Path(args.office).resolve()
     version=(office/'VERSION').read_text().strip()
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[\w.-]+)?',version): raise ValueError('Invalid Office version.')
@@ -80,12 +82,17 @@ def build(args):
             run('docker','save','-o',str(archive),ref)
             manifest['images'].append({'role':role,'ref':ref,'image_id':info['Id'],
                                       'archive':'images/'+role+'.tar','sha256':sha(archive)})
-        destination=Path(args.output).resolve()
         destination.parent.mkdir(parents=True,exist_ok=True)
-        if destination.exists():raise ValueError('Refusing to overwrite an existing release archive.')
-        with zipfile.ZipFile(destination,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1,allowZip64=True) as bundle:
-            bundle.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False,separators=(',',':')))
-            for role in images:bundle.write(work/(role+'.tar'),'images/'+role+'.tar')
+        # Publish only a finished archive. An interrupted build leaves no
+        # apparently installable ZIP and never replaces an existing release.
+        with tempfile.NamedTemporaryFile(dir=destination.parent,prefix='.office-runtime-',suffix='.partial',delete=False) as stream:
+            pending=Path(stream.name)
+        try:
+            with zipfile.ZipFile(pending,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1,allowZip64=True) as bundle:
+                bundle.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False,separators=(',',':')))
+                for role in images:bundle.write(work/(role+'.tar'),'images/'+role+'.tar')
+            os.link(pending,destination)
+        finally:pending.unlink(missing_ok=True)
         print('Bundle:',destination)
         print('SHA256:',sha(destination))
         print('Release:',version)

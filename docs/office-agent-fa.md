@@ -2,6 +2,12 @@
 
 پنل مدیریتی scm.ponet.ir است؛ مشتری و helper فقط update.ponet.ir را استفاده می‌کنند. این نسخه helper کامپایل‌شدهٔ Linux، API نسخهٔ ۲ و اتصال داخل Office را اضافه می‌کند.
 
+از rc.4، خود پروژه Office نیز کد `agent/`، ورودی `office-install.sh` و ابزار مالک
+`scripts/office-helper.py` را دارد. این ابزار از پوشه، ZIP سورس یا GitHub با ref مشخص بستهٔ محافظت‌شده
+می‌سازد؛ برای جزئیات [راهنمای داخل Office](../integrations/office/docs/AGENT-INSTALL-fa.md) را ببینید.
+همگام‌سازی مخزن محصول Office در Central فایل `office-runtime-VERSION-amd64.zip` از GitHub Release را
+دریافت می‌کند و به آرشیو سورس fallback نمی‌کند.
+
 ## وضعیت انتشار و پیش‌نیاز
 
 کد و تست‌های مجوز اجرا شده‌اند؛ اجرای واقعی Docker، ساخت ionCube و نصب مشتری باید روی Linux آزمایشی بررسی شوند. این محیط به Docker سرور شما یا encoder تجاری دسترسی ندارد. نسخهٔ RC برای همین مرحله است. تا بستهٔ محافظت‌شده آماده نباشد، مجوز نصب خودکار قابل استفاده نیست. ZIP سورس GitHub برای نصب مشتری پذیرفته نمی‌شود.
@@ -16,7 +22,7 @@
 cd /opt/office-central
 sudo bash centralctl.sh backup
 git fetch origin --tags
-(umask 022; git checkout --detach v1.4.0-rc.3)
+(umask 022; git checkout --detach v1.4.0-rc.4)
 sudo bash centralctl.sh start
 sudo bash centralctl.sh doctor
 ~~~

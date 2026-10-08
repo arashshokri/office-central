@@ -10,12 +10,40 @@ root=Path(__file__).resolve().parents[1]
 office=Path(args.office).resolve()
 if not (office/'artisan').is_file():raise SystemExit('Not an Office checkout.')
 source=root/'integrations/office'
-for folder in ['app','config','resources','tests']:
+if not source.is_dir():source=root/'agent/integration'
+if not source.is_dir():raise SystemExit('Office integration kit is missing.')
+def copy_managed(file,dest):
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    if dest.exists() and dest.read_bytes()!=file.read_bytes() and not args.update:raise SystemExit('Existing integration file differs: '+str(dest))
+    if file.resolve()!=dest.resolve():shutil.copy2(file,dest)
+for folder in ['app','config','resources','tests','docs','.github']:
     for file in (source/folder).rglob('*'):
         if file.is_file():
-            dest=office/file.relative_to(source);dest.parent.mkdir(parents=True,exist_ok=True)
-            if dest.exists() and dest.read_bytes()!=file.read_bytes() and not args.update:raise SystemExit('Existing integration file differs: '+str(dest))
-            shutil.copy2(file,dest)
+            copy_managed(file,office/file.relative_to(source))
+# Office owns a standalone copy of its installer, daemon, package builder and
+# integration kit. A source ZIP or GitHub checkout can build without Central.
+for file in (root/'agent').glob('*'):
+    if file.is_file() and (file.suffix=='.go' or file.name=='go.mod'):
+        copy_managed(file,office/'agent'/file.name)
+for name in ['integrate-office.py','office-helper.py','build-office-package.py','build-office-agent.sh']:
+    copy_managed(root/'scripts'/name,office/'scripts'/name)
+copy_managed(root/'tests/Deployment/office_source_test.py',office/'tests/Deployment/office_source_test.py')
+install=root/'public/agent/install.sh'
+docker_install=root/'public/agent/install-docker.sh'
+if not install.is_file():install=root/'office-install.sh'
+if not docker_install.is_file():docker_install=root/'agent/install-docker.sh'
+copy_managed(install,office/'office-install.sh')
+copy_managed(docker_install,office/'agent/install-docker.sh')
+for file in source.rglob('*'):
+    if file.is_file():copy_managed(file,office/'agent/integration'/file.relative_to(source))
+ignore=office/'agent/.gitignore'
+if not ignore.exists() or ignore.read_text()=='office-agent\n*.test\n':
+    ignore.write_text('/office-agent\n*.test\n',encoding='utf-8')
+ignore=office/'dist/.gitignore';ignore.parent.mkdir(parents=True,exist_ok=True)
+if not ignore.exists():ignore.write_text('*\n!.gitignore\n',encoding='utf-8')
+ignore=office/'.gitignore';text=ignore.read_text(encoding='utf-8') if ignore.exists() else ''
+if '__pycache__/' not in text:
+    ignore.write_text(text+'\n# Owner package helper runtime cache\n__pycache__/\n',encoding='utf-8',newline='\n')
 provider=office/'bootstrap/providers.php';text=provider.read_text(encoding='utf-8')
 entry='    App\\Providers\\OfficeLicenseServiceProvider::class,\n'
 if entry.strip() not in text:

@@ -8,7 +8,7 @@
 
 ~~~bash
 cd /opt/office-central &&
-sudo bash centralctl.sh update v1.4.0-rc.3 &&
+sudo bash centralctl.sh update v1.4.0-rc.4 &&
 sudo bash centralctl.sh doctor
 ~~~
 
@@ -23,6 +23,12 @@ curl --fail https://update.ponet.ir/agent/bootstrap.json
 ## ۲. ساخت بسته فقط روی ماشین مالک
 
 این مرحله روی Linux سازنده با Docker/BuildKit، Python 3، سورس Office، encoder دارای مجوز برای PHP 8.4 و Loader نوع ZTS انجام می‌شود. مسیرهای زیر نمونه‌اند و باید با مسیر واقعی جایگزین شوند. سورس را روی سرور مشتری نبرید.
+
+در خود Office، راهنمای `docs/AGENT-INSTALL-fa.md` و helper مستقل `scripts/office-helper.py` وجود دارد.
+ورودی helper می‌تواند پوشهٔ Office، ZIP سورس یا لینک مخزن GitHub همراه با `--ref` مشخص باشد؛
+ساخت همیشه روی ماشین مالک انجام می‌شود. برای دریافت نسخه از GitHub در Central، خروجی را با نام
+`office-runtime-VERSION-amd64.zip` به Release همان نسخه پیوست کنید و مخزن محصول Office را همگام کنید.
+ZIP خروجی را می‌توان مستقیماً در نسخه‌های Central نیز بارگذاری کرد.
 
 ~~~bash
 cd /path/to/office-central

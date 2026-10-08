@@ -2,6 +2,7 @@
 
 @section('content')
 <div class="page-title"><div><h1>{{ __('ui.repositories') }}</h1><p>{{ __('ui.repositories_help') }}</p></div></div>
+<div class="flash">{{ __('ui.repository_office_runtime_help') }}</div>
 
 <div class="detail-grid repository-grid">
     <section class="panel">
