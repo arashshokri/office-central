@@ -11,6 +11,7 @@ use App\Services\AuditService;
 use App\Services\LicenseKeyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class LicenseController extends Controller
 {
@@ -37,7 +38,9 @@ class LicenseController extends Controller
         return view('admin.license-form', [
             'customers' => Customer::where('status', 'active')->get(),
             'products' => Product::where('status', 'active')->get(),
-            'releases' => Release::where('status', 'published')->get(),
+            'releases' => Release::with('product')->where('status', 'published')->get(),
+            'hasOfficeRuntime' => Release::where('status', 'published')->whereNotNull('runtime_manifest')
+                ->whereHas('product', fn ($query) => $query->where('slug', 'office')->where('status', 'active'))->exists(),
         ]);
     }
 
@@ -64,7 +67,9 @@ class LicenseController extends Controller
 
         if (($data['activation_mode'] ?? 'legacy') === 'installer_once') {
             $release = Release::whereKey($data['release_id'] ?? 0)->first();
-            abort_unless($release?->status->value === 'published' && $release->runtime_manifest, 422, 'Assign a protected runtime bundle first.');
+            if ($release?->status->value !== 'published' || ! $release->runtime_manifest || $release->product->slug !== 'office') {
+                throw ValidationException::withMessages(['release_id' => __('ui.protected_release_required')]);
+            }
             $data['max_installations'] = 1;
             $data['deployment']['port'] = (int) ($data['deployment']['port'] ?? 8080);
             $data['deployment_config'] = $data['deployment'];

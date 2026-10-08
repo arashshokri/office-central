@@ -2,14 +2,14 @@
 <html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale()==='fa'?'rtl':'ltr' }}">
 <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ __('ui.app') }}</title><link rel="stylesheet" href="{{ asset('assets/app.css') }}"><link rel="stylesheet" href="{{ asset('assets/control-center.css') }}"><script src="{{ asset('assets/app.js') }}" defer></script>
+    <title>{{ __('ui.app') }}</title><link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ config('office.version') }}"><link rel="stylesheet" href="{{ asset('assets/control-center.css') }}?v={{ config('office.version') }}"><script src="{{ asset('assets/app.js') }}?v={{ config('office.version') }}" defer></script>
 </head>
 <body>
 <div class="mobile-backdrop" data-menu-close></div>
 <div class="shell">
     <aside id="centralSidebar">
         <div class="brand"><span>OC</span><div><strong>{{ __('ui.app') }}</strong><small>Control Plane</small></div></div>
-        <div class="central-health"><i></i><span>panel.ponet.ir</span><small>{{ __('ui.central_online') }}</small></div>
+        <div class="central-health"><i></i><span>{{ parse_url(config('office.public_url') ?: config('app.url'), PHP_URL_HOST) }}</span><small>{{ __('ui.central_online') }}</small></div>
         <nav>
             @php($navigation = [
                 ['dashboard','dashboard','⌂'],['customers.index','customers','◉'],['products.index','products','◇'],

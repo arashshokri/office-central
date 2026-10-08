@@ -1,8 +1,6 @@
 @extends('layouts.app')
 
 @section('content')
-<p>نوع نصب: {{ $license->activation_mode }} — کد مصرف‌شده: {{ $license->consumed_at ? $license->consumed_at->toISOString() : 'خیر' }}</p>
-
 <div class="page-title">
     <div><h1>{{ __('ui.license_details') }}</h1><p dir="ltr">{{ $license->uuid }}</p></div>
     <a class="secondary button" href="{{ route('licenses.index') }}">{{ __('ui.back') }}</a>
@@ -26,6 +24,8 @@
             <div><dt>{{ __('ui.field_license_key_prefix') }}</dt><dd dir="ltr">{{ $license->license_key_prefix }}••••</dd></div>
             <div><dt>{{ __('ui.max_installations') }}</dt><dd>{{ $license->max_installations }}</dd></div>
             <div><dt>{{ __('ui.state_revision') }}</dt><dd>{{ $license->state_revision }}</dd></div>
+            <div><dt>{{ __('ui.install_mode') }}</dt><dd>{{ $license->activation_mode === 'installer_once' ? __('ui.installer_once') : __('ui.legacy_license') }}</dd></div>
+            <div><dt>{{ __('ui.code_consumed_at') }}</dt><dd>{{ $license->consumed_at?->toISOString() ?? '—' }}</dd></div>
         </dl>
     </section>
 
@@ -49,6 +49,27 @@
         @endif
     </section>
 </div>
+
+@if($license->activation_mode === 'installer_once')
+<section class="panel installer-guide">
+    <div class="section-heading"><h2>{{ __('ui.install_office_for_customer') }}</h2></div>
+    <ol>
+        <li>{{ __('ui.installer_server_prerequisites') }}</li>
+        <li>{{ __('ui.installer_proxy_step') }}</li>
+        <li>{{ __('ui.installer_license_prompt') }}</li>
+    </ol>
+    @if($license->consumed_at)
+        <p>{{ __('ui.installer_consumed_help') }}</p>
+    @else
+        <pre id="officeInstallerCommand">sudo apt-get update &amp;&amp;
+sudo apt-get install -y curl python3 ca-certificates &amp;&amp;
+curl --fail --proto '=https' --tlsv1.2 https://update.ponet.ir/agent/install.sh -o office-install.sh &amp;&amp;
+sudo bash office-install.sh</pre>
+        <button class="secondary" type="button" data-copy-target="officeInstallerCommand">{{ __('ui.copy') }}</button>
+    @endif
+    <p>{{ __('ui.installer_code_lifecycle') }}</p>
+</section>
+@endif
 
 <section class="panel">
     <div class="section-heading"><h2>{{ __('ui.installations') }}</h2><span>{{ $license->installations->count() }} / {{ $license->max_installations }}</span></div>

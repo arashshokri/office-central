@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale()==='fa'?'rtl':'ltr' }}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ __('ui.two_factor_challenge') }}</title><link rel="stylesheet" href="{{ asset('assets/app.css') }}"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ __('ui.two_factor_challenge') }}</title><link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ config('office.version') }}"></head>
 <body class="login-page">
 <form class="login-card" method="post" action="{{ route('two-factor.verify') }}">
     @csrf

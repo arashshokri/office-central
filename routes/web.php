@@ -29,7 +29,7 @@ Route::middleware(['auth', 'role:super_admin,admin,viewer'])->group(function () 
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/releases', [ReleaseController::class, 'index'])->name('releases.index');
     Route::get('/licenses', [LicenseController::class, 'index'])->name('licenses.index');
-    Route::get('/licenses/{license}', [LicenseController::class, 'show'])->name('licenses.show');
+    Route::get('/licenses/{license}', [LicenseController::class, 'show'])->whereNumber('license')->name('licenses.show');
     Route::get('/installations', [MonitoringController::class, 'installations'])->name('installations.index');
     Route::get('/installations/{installation}', [MonitoringController::class, 'installation'])->name('installations.show');
     Route::get('/security-events', [MonitoringController::class, 'security'])->name('security.index');

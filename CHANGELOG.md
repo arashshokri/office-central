@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0-rc.3
+
+- Version panel/login CSS and JavaScript URLs to bypass stale proxy/CDN asset responses.
+- Display the configured Central hostname in the sidebar.
+- Fix /licenses/create being captured by the license detail route.
+- Distinguish source archives from protected runtimes in license creation, retain form input and show actionable validation errors.
+- Show customer installation commands and consumed-code guidance on installer licenses.
+
 ## 1.4.0-rc.2
 
 - Repair restrictive Git checkout permissions inside the PHP image before running as www-data.
