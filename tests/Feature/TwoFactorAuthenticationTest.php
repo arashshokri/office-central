@@ -75,10 +75,10 @@ class TwoFactorAuthenticationTest extends TestCase
     {
         $admin = User::factory()->create(['role' => 'super_admin', 'active' => true]);
 
-        $this->actingAs($admin)->put(route('users.update', $admin), [
+        $this->actingAs($admin)->putJson(route('users.update', $admin), [
             'role' => 'admin',
             'active' => true,
-        ])->assertStatus(422);
+        ])->assertStatus(422)->assertJsonValidationErrors('role');
 
         $this->assertSame('super_admin', $admin->fresh()->role);
     }

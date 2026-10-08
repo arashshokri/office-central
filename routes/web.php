@@ -38,12 +38,23 @@ Route::middleware(['auth', 'role:super_admin,admin,viewer'])->group(function () 
 Route::middleware(['auth', 'role:super_admin,admin'])->group(function () {
     Route::get('/customers/create', [CustomerController::class, 'create'])->name('customers.create');
     Route::post('/customers', [CustomerController::class, 'store'])->name('customers.store');
+    Route::get('/customers/{customer}/edit', [CustomerController::class, 'edit'])->name('customers.edit');
+    Route::put('/customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
+    Route::delete('/customers/{customer}', [CustomerController::class, 'destroy'])->name('customers.destroy');
     Route::get('/products/create', [ProductController::class, 'create'])->name('products.create');
     Route::post('/products', [ProductController::class, 'store'])->name('products.store');
+    Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->name('products.edit');
+    Route::put('/products/{product}', [ProductController::class, 'update'])->name('products.update');
+    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->name('products.destroy');
     Route::get('/releases/create', [ReleaseController::class, 'create'])->name('releases.create');
     Route::post('/releases', [ReleaseController::class, 'store'])->name('releases.store');
+    Route::get('/releases/{release}/edit', [ReleaseController::class, 'edit'])->name('releases.edit');
+    Route::put('/releases/{release}', [ReleaseController::class, 'update'])->name('releases.update');
+    Route::delete('/releases/{release}', [ReleaseController::class, 'destroy'])->name('releases.destroy');
     Route::get('/licenses/create', [LicenseController::class, 'create'])->name('licenses.create');
     Route::post('/licenses', [LicenseController::class, 'store'])->name('licenses.store');
+    Route::delete('/licenses/{license}', [LicenseController::class, 'destroy'])->name('licenses.destroy');
+    Route::post('/licenses/{license}/replace-code', [LicenseController::class, 'replaceCode'])->middleware('throttle:6,1')->name('licenses.replace-code');
     Route::post('/releases/{release}/publish', [ReleaseController::class, 'publish'])->name('releases.publish');
     Route::post('/licenses/{license}/status/{status}', [LicenseController::class, 'status'])->name('licenses.status');
     Route::put('/licenses/{license}/update-release', [LicenseController::class, 'updateRelease'])->name('licenses.update-release');
@@ -60,11 +71,17 @@ Route::middleware(['auth', 'role:super_admin,admin,viewer'])->group(function () 
 });
 Route::middleware(['auth', 'role:super_admin'])->group(function () {
     Route::get('/users', [UserController::class, 'index'])->name('users.index');
+    Route::get('/users/create', [UserController::class, 'create'])->name('users.create');
+    Route::get('/users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
     Route::post('/users', [UserController::class, 'store'])->name('users.store');
     Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
 });
 Route::middleware(['auth', 'role:super_admin,admin'])->group(function () {
     Route::get('/repositories', [RepositoryIntegrationController::class, 'index'])->name('repositories.index');
     Route::post('/repositories', [RepositoryIntegrationController::class, 'store'])->name('repositories.store');
+    Route::get('/repositories/{integration}/edit', [RepositoryIntegrationController::class, 'edit'])->name('repositories.edit');
+    Route::put('/repositories/{integration}', [RepositoryIntegrationController::class, 'update'])->name('repositories.update');
+    Route::delete('/repositories/{integration}', [RepositoryIntegrationController::class, 'destroy'])->name('repositories.destroy');
+    Route::post('/repositories/{integration}/test', [RepositoryIntegrationController::class, 'testConnection'])->middleware('throttle:10,1')->name('repositories.test');
     Route::post('/repositories/{integration}/sync', [RepositoryIntegrationController::class, 'sync'])->name('repositories.sync');
 });

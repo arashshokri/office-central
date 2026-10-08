@@ -13,6 +13,8 @@ class License extends Model
 
     protected $guarded = [];
 
+    protected $hidden = ['license_key_hash', 'license_key_encrypted'];
+
     public function uniqueIds()
     {
         return ['uuid'];
@@ -20,22 +22,22 @@ class License extends Model
 
     protected function casts(): array
     {
-        return ['status' => LicenseStatus::class, 'deployment_config' => 'array', 'consumed_at' => 'datetime', 'expires_at' => 'datetime', 'activated_at' => 'datetime', 'temporarily_locked_at' => 'datetime', 'temporarily_unlocked_at' => 'datetime', 'metadata' => 'array'];
+        return ['license_key_encrypted' => 'encrypted', 'status' => LicenseStatus::class, 'deployment_config' => 'array', 'consumed_at' => 'datetime', 'expires_at' => 'datetime', 'activated_at' => 'datetime', 'temporarily_locked_at' => 'datetime', 'temporarily_unlocked_at' => 'datetime', 'metadata' => 'array'];
     }
 
     public function customer()
     {
-        return $this->belongsTo(Customer::class);
+        return $this->belongsTo(Customer::class)->withTrashed();
     }
 
     public function product()
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(Product::class)->withTrashed();
     }
 
     public function release()
     {
-        return $this->belongsTo(Release::class);
+        return $this->belongsTo(Release::class)->withTrashed();
     }
 
     public function installations()

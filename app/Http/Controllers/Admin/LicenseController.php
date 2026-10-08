@@ -11,28 +11,30 @@ use App\Services\AuditService;
 use App\Services\LicenseKeyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class LicenseController extends Controller
 {
     public function index()
     {
-        return view('admin.resource', [
+        return response()->view('admin.resource', [
             'title' => __('ui.licenses'),
-            'columns' => ['license_key_prefix', 'customer.name', 'product.name', 'status', 'state_revision', 'expires_at'],
+            'columns' => [auth()->user()->role === 'viewer' ? 'license_key_prefix' : 'license_key_encrypted', 'customer.name', 'product.name', 'status', 'state_revision', 'expires_at'],
             'rows' => License::with(['customer', 'product'])->latest()->paginate(20),
             'createRoute' => route('licenses.create'),
             'showRoute' => 'licenses.show',
-        ]);
+            'deleteRoute' => 'licenses.destroy',
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     public function show(License $license)
     {
-        return view('admin.license-show', [
+        return response()->view('admin.license-show', [
             'license' => $license->load(['customer', 'product', 'release', 'updateRelease', 'installations']),
             'updateReleases' => Release::where('product_id', $license->product_id)->where('status', 'published')
                 ->whereNotNull('runtime_manifest')->latest('published_at')->get(),
-        ]);
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     public function create()
@@ -56,9 +58,9 @@ class LicenseController extends Controller
             'deployment.bind_ip' => ['nullable', 'ip'],
             'deployment.port' => ['nullable', 'integer', 'min:1024', 'max:65535'],
             'deployment.proxy_network' => ['nullable', 'regex:/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/D'],
-            'customer_id' => ['required', 'exists:customers,id'],
-            'product_id' => ['required', 'exists:products,id'],
-            'release_id' => ['nullable', 'exists:releases,id'],
+            'customer_id' => ['required', Rule::exists('customers', 'id')->whereNull('deleted_at')],
+            'product_id' => ['required', Rule::exists('products', 'id')->whereNull('deleted_at')],
+            'release_id' => ['nullable', Rule::exists('releases', 'id')->whereNull('deleted_at')],
             'max_installations' => ['required', 'integer', 'min:1', 'max:10000'],
             'expires_at' => ['nullable', 'date', 'after:today'],
         ]);
@@ -84,6 +86,7 @@ class LicenseController extends Controller
         $license = DB::transaction(fn () => License::create(array_merge($data, [
             'license_key_hash' => $keys->hash($raw),
             'license_key_prefix' => $keys->prefix($raw),
+            'license_key_encrypted' => $raw,
             'status' => 'created',
             'state_revision' => 1,
             'created_by' => $request->user()->id,
@@ -91,7 +94,6 @@ class LicenseController extends Controller
         $audit->record('license.generated', $license, null, ['uuid' => $license->uuid, 'status' => 'created']);
 
         return redirect()->route('licenses.show', $license)
-            ->with('license_key', $raw)
             ->with('success', __('ui.license_once'));
     }
 
@@ -107,7 +109,7 @@ class LicenseController extends Controller
 
     public function updateRelease(Request $request, License $license, AuditService $audit)
     {
-        $data = $request->validate(['release_id' => ['nullable', 'exists:releases,id']]);
+        $data = $request->validate(['release_id' => ['nullable', Rule::exists('releases', 'id')->whereNull('deleted_at')]]);
         $release = empty($data['release_id']) ? null : Release::findOrFail($data['release_id']);
         if ($release && ($release->product_id !== $license->product_id || $release->status->value !== 'published' || ! $release->runtime_manifest)) {
             throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
@@ -115,7 +117,34 @@ class LicenseController extends Controller
         $before = $license->toArray();
         $license->update(['update_release_id' => $release?->id, 'state_revision' => DB::raw('state_revision + 1')]);
         $audit->record('license.update_permission_changed', $license, $before, $license->fresh()->toArray());
+
         return back()->with('success', __('ui.saved'));
+    }
+
+    public function replaceCode(License $license, LicenseKeyService $keys, AuditService $audit)
+    {
+        DB::transaction(function () use ($license, $keys, $audit) {
+            $license = License::whereKey($license->id)->lockForUpdate()->firstOrFail();
+            abort_if($license->license_key_encrypted !== null, 409);
+            $raw = $keys->generate();
+            $license->update(['license_key_hash' => $keys->hash($raw), 'license_key_prefix' => $keys->prefix($raw), 'license_key_encrypted' => $raw]);
+            $audit->record('license.code_replaced', $license, null, ['installation_bindings_preserved' => true]);
+        });
+
+        return back()->with('success', __('ui.license_code_replaced'));
+    }
+
+    public function destroy(License $license, AuditService $audit)
+    {
+        DB::transaction(function () use ($license, $audit) {
+            $license = License::whereKey($license->id)->lockForUpdate()->firstOrFail();
+            $before = $license->toArray();
+            $license->update(['status' => 'revoked', 'state_revision' => DB::raw('state_revision + 1')]);
+            $license->delete();
+            $audit->record('license.deleted', $license, $before, ['status' => 'revoked']);
+        });
+
+        return redirect()->route('licenses.index')->with('success', __('ui.license_deleted'));
     }
 
     public function temporaryLock(Request $request, License $license, AuditService $audit)

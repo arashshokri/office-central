@@ -27,12 +27,12 @@ class Installation extends Model
 
     public function license()
     {
-        return $this->belongsTo(License::class);
+        return $this->belongsTo(License::class)->withTrashed();
     }
 
     public function release()
     {
-        return $this->belongsTo(Release::class);
+        return $this->belongsTo(Release::class)->withTrashed();
     }
 
     public function targetRelease()

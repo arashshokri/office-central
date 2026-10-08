@@ -6,12 +6,18 @@
     <a class="secondary button" href="{{ route('licenses.index') }}">{{ __('ui.back') }}</a>
 </div>
 
-@if(session('license_key'))
+@if(auth()->user()->role !== 'viewer')
 <section class="one-time-secret">
-    <div><strong>{{ __('ui.copy_license_now') }}</strong><small>{{ __('ui.license_once') }}</small></div>
-    <code id="generatedLicenseKey" dir="ltr">{{ session('license_key') }}</code>
+    <div><strong>{{ __('ui.full_license_key') }}</strong><small>{{ __('ui.license_code_help') }}</small></div>
+    @if($license->license_key_encrypted)
+    <code id="generatedLicenseKey" dir="ltr">{{ $license->license_key_encrypted }}</code>
     <button type="button" data-copy-target="generatedLicenseKey">{{ __('ui.copy') }}</button>
+    @else
+    <p>{{ __('ui.legacy_code_unavailable') }}</p>
+    <form method="post" action="{{ route('licenses.replace-code',$license) }}">@csrf<button data-confirm="{{ __('ui.confirm_replace_code') }}">{{ __('ui.replace_license_code') }}</button></form>
+    @endif
 </section>
+<div class="license-delete-action"><form method="post" action="{{ route('licenses.destroy',$license) }}">@csrf @method('DELETE')<button class="danger-button" data-confirm="{{ __('ui.confirm_delete_license') }}">{{ __('ui.delete_license') }}</button></form></div>
 @endif
 
 @if(auth()->user()->role !== 'viewer')
@@ -31,7 +37,7 @@
             <div><dt>{{ __('ui.customer') }}</dt><dd>{{ $license->customer->name }}</dd></div>
             <div><dt>{{ __('ui.product') }}</dt><dd>{{ $license->product->name }}</dd></div>
             <div><dt>{{ __('ui.release') }}</dt><dd>{{ $license->release?->version ?? '—' }}</dd></div>
-            <div><dt>{{ __('ui.field_license_key_prefix') }}</dt><dd dir="ltr">{{ $license->license_key_prefix }}••••</dd></div>
+            <div><dt>{{ __('ui.field_license_key_prefix') }}</dt><dd dir="ltr">{{ auth()->user()->role === 'viewer' ? $license->license_key_prefix.'••••' : ($license->license_key_encrypted ?? __('ui.legacy_code_unavailable_short')) }}</dd></div>
             <div><dt>{{ __('ui.max_installations') }}</dt><dd>{{ $license->max_installations }}</dd></div>
             <div><dt>{{ __('ui.state_revision') }}</dt><dd>{{ $license->state_revision }}</dd></div>
             <div><dt>{{ __('ui.install_mode') }}</dt><dd>{{ __('ui.'.($license->activation_mode === 'attach_once' ? 'attach_once' : ($license->activation_mode === 'installer_once' ? 'installer_once' : 'legacy_license'))) }}</dd></div>

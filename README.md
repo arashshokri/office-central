@@ -11,7 +11,7 @@ Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. Postgr
 Production requires Linux, Docker Engine, Compose v2.20+, Git, OpenSSL, and an existing Nginx Proxy Manager (NPM):
 
 ```bash
-git clone --branch v1.3.0 https://github.com/arashshokri/office-central.git office-central
+git clone --branch v1.4.0-rc.8 https://github.com/arashshokri/office-central.git office-central
 cd office-central
 sudo bash centralctl.sh install --domain scm.ponet.ir --email admin@company.com --proxy-network proxynet
 ```
@@ -24,7 +24,7 @@ Run `sudo bash centralctl.sh` for the interactive menu. `start` rebuilds/migrate
 
 ## Admin panel
 
-Run `php artisan office:create-admin` for an administrator. Roles are `super_admin`, `admin`, and read-only `viewer`. The UI supports Persian RTL and English LTR and stores each user's locale. Dashboard values query live data. Admins can create customers/products, upload ZIP releases, publish immutable releases, generate hashed licenses, change license state, and inspect installations, security events, and audits.
+Run `php artisan office:create-admin` for an administrator. Roles are `super_admin`, `admin`, and read-only `viewer`. The UI supports Persian RTL and English LTR and stores each user's locale. Dashboard values query live data. Admins can create, edit and delete customers/products/releases, publish immutable releases, manage licenses, and inspect installations, security events, and audits. User management is available to super administrators. See [record and license management](docs/admin-records-fa.md) for deletion rules, recoverable license codes and the simplified repository connection flow.
 
 ## Agent API
 

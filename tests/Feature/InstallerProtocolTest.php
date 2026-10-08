@@ -46,6 +46,21 @@ class InstallerProtocolTest extends TestCase
     private function receipt(Release $release):array {
         return ['hardware'=>$this->hardware,'release_id'=>$release->uuid,'package_sha256'=>$release->package_sha256,'application_version'=>$release->version,'health_ok'=>true];
     }
+    public function test_deleted_license_returns_signed_lock_to_installed_v2_agent_without_deleting_data():void {
+        $license=$this->license();
+        $data=$this->signed('begin',$this->activation())->assertOk()->json('data');
+        $this->signed('complete',$this->receipt($license->release),$data['credential'])->assertOk();
+        $admin=\App\Models\User::factory()->create(['role'=>'super_admin','active'=>true]);
+        $this->actingAs($admin)->delete(route('licenses.destroy',$license))->assertRedirect();
+        $envelope=$this->signed('state',['hardware'=>$this->hardware],$data['credential'])->assertOk()->json('data.signed_state');
+        $state=$this->payload($envelope);
+        $this->assertSame('locked',$state['access']);
+        $this->assertSame('LICENSE_REVOKED',$state['code']);
+        $this->assertSame(1,Installation::count());
+        $this->assertNotNull(Installation::first()->completed_at);
+        $this->assertNotSoftDeleted($license->customer);
+        $this->assertNotSoftDeleted($license->product);
+    }
     public function test_begin_reserves_resume_is_idempotent_and_only_completion_consumes():void {
         $license=$this->license();
         $first=$this->signed('begin',$this->activation())->assertOk()->json('data');
