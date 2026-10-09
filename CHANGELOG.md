@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0-rc.11
+
+- Give Office update checks, installation, status polling and activation separate per-user throttle counters so polling cannot block a version check.
+- Return actionable Persian rate-limit messages and Retry-After; wait and retry checks once, back off status polling, and never automatically replay an installation request.
+- Add regression coverage that reproduces the former shared-counter failure and tests browser retry behavior.
+
 ## 1.4.0-rc.10
 
 - Add direct license version management from the license list, with installed and authorized version summaries.

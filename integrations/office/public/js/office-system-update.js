@@ -28,6 +28,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
                 ...(body ? { body: JSON.stringify(body) } : {}) });
             if ([401, 419].includes(response.status)) throw new Error('نشست شما منقضی شده است؛ دوباره وارد سامانه شوید.');
+            if (response.status === 429) {
+                const header = response.headers.get('Retry-After');
+                const seconds = /^\d+$/.test(header || '') ? Number(header) : Math.ceil((Date.parse(header) - Date.now()) / 1000);
+                const retryAfter = Number.isFinite(seconds) && seconds > 0 ? Math.min(3600, seconds) : 60;
+                const limited = new Error('تعداد درخواست‌ها زیاد است؛ ' + retryAfter + ' ثانیه صبر کنید و دوباره تلاش کنید.');
+                limited.retryAfter = retryAfter;
+                throw limited;
+            }
             let data;
             try { data = await response.json(); }
             catch { throw new Error('پاسخ سامانه قابل خواندن نیست؛ ممکن است نسخهٔ جدید در حال راه‌اندازی باشد.'); }
@@ -78,8 +86,21 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const poll = async () => {
         try { renderJob(await api(root.dataset.statusUrl)); }
-        catch (e) { byId('updateMessage').textContent = 'در انتظار راه‌اندازی سرویس…'; fail(e); pollTimer = setTimeout(poll, 5000); }
+        catch (e) {
+            byId('updateMessage').textContent = e.retryAfter ? 'پیگیری وضعیت پس از پایان زمان انتظار ادامه می‌یابد.' : 'در انتظار راه‌اندازی سرویس…';
+            fail(e);
+            pollTimer = setTimeout(poll, e.retryAfter ? e.retryAfter * 1000 : 5000);
+        }
     };
+    const waitBeforeCheckRetry = seconds => new Promise(resolve => {
+        const tick = () => {
+            byId('checkMessage').textContent = 'بررسی مجدد بروزرسانی تا ' + seconds + ' ثانیه دیگر…';
+            if (seconds <= 0) { resolve(); return; }
+            seconds -= 1;
+            setTimeout(tick, 1000);
+        };
+        tick();
+    });
     check.addEventListener('click', async () => {
         if (checking || running || starting) return;
         checking = true; buttons(); error.hidden = true; progress.hidden = false;
@@ -90,7 +111,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // completion until the helper actually returns an authoritative result.
         progressTimer = setInterval(() => setPercent(Math.min(90, percent + Math.max(1, Math.ceil((90 - percent) / 8)))), 300);
         try {
-            const data = await api(root.dataset.checkUrl, 'POST');
+            let data;
+            try { data = await api(root.dataset.checkUrl, 'POST'); }
+            catch (e) {
+                if (!e.retryAfter || e.retryAfter > 60) throw e;
+                clearInterval(progressTimer);
+                await waitBeforeCheckRetry(e.retryAfter);
+                byId('checkMessage').textContent = 'در حال بررسی نسخه‌های مجاز…';
+                // Retry this read-only check once. Never replay an install POST.
+                data = await api(root.dataset.checkUrl, 'POST');
+            }
             if (!data.status && data.confirmation_supported !== true) throw new Error('HELPER_UPGRADE_REQUIRED: سرویس بروزرسانی باید توسط مدیر سرور به‌روز شود. با نماینده فنی خود در ارتباط باشید.');
             clearInterval(progressTimer); setPercent(100);
             if (data.status) { byId('checkMessage').textContent = 'وضعیت عملیات دریافت شد.'; renderJob(data); }

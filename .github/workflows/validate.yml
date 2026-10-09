@@ -16,6 +16,10 @@ jobs:
           coverage: none
       - run: composer install --no-interaction --prefer-dist
       - run: php artisan test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test integrations/office/tests/Js/office-system-update.test.cjs
       - run: bash tests/Deployment/centralctl_test.sh
       - run: python3 tests/Deployment/office_source_test.py
       - run: sudo bash tests/Deployment/permissions_test.sh

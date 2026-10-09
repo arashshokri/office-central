@@ -6,12 +6,14 @@ use App\Http\Controllers\OfficeUpdateController;
 use App\Http\Middleware\OfficeLicenseGate;
 use App\Models\User;
 use App\Services\OfficeLicense;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -20,6 +22,19 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        // Numeric throttle middleware shares a user counter across routes.
+        // Status polling must never consume check, install or activation quotas.
+        foreach (['office-update-check' => 6, 'office-update-install' => 3,
+            'office-update-status' => 60, 'office-license-reactivate' => 6] as $name => $attempts) {
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute($attempts)
+                ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()))
+                ->response(function (Request $request, array $headers) {
+                    $seconds = max(1, (int) ($headers['Retry-After'] ?? 60));
+
+                    return response()->json(['message' => "تعداد درخواست‌های این عملیات زیاد است؛ {$seconds} ثانیه صبر کنید و دوباره تلاش کنید.",
+                        'retry_after' => $seconds], 429, $headers + ['Cache-Control' => 'no-store, private']);
+                }));
+        }
         if (is_file(base_path('office-managed')) && is_dir(base_path('protected-views'))) {
             config(['view.compiled' => base_path('protected-views'), 'view.check_cache_timestamps' => false]);
         }
@@ -33,9 +48,9 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
         Route::middleware('web')->group(function () {
             Route::middleware('auth')->group(function () {
                 Route::get('/settings/system-update', [OfficeUpdateController::class, 'index'])->name('settings.system-update');
-                Route::post('/settings/system-update/check', [OfficeUpdateController::class, 'check'])->middleware('throttle:6,1')->name('settings.system-update.check');
-                Route::post('/settings/system-update/install', [OfficeUpdateController::class, 'update'])->middleware('throttle:3,1')->name('settings.system-update.install');
-                Route::get('/settings/system-update/status', [OfficeUpdateController::class, 'status'])->middleware('throttle:60,1')->name('settings.system-update.status');
+                Route::post('/settings/system-update/check', [OfficeUpdateController::class, 'check'])->middleware('throttle:office-update-check')->name('settings.system-update.check');
+                Route::post('/settings/system-update/install', [OfficeUpdateController::class, 'update'])->middleware('throttle:office-update-install')->name('settings.system-update.install');
+                Route::get('/settings/system-update/status', [OfficeUpdateController::class, 'status'])->middleware('throttle:office-update-status')->name('settings.system-update.status');
             });
             Route::get('/internal/license/access', fn () => response('', 204));
             Route::get('/license', function () {
@@ -56,7 +71,7 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
                 }
 
                 return redirect('/')->with('success', 'لایسنس فعال شد؛ اطلاعات سامانه حفظ شده است.');
-            })->middleware(['auth', 'throttle:6,1'])->name('office-agent.reactivate');
+            })->middleware(['auth', 'throttle:office-license-reactivate'])->name('office-agent.reactivate');
         });
 
         Artisan::command('office-agent:health {--expected-version=} {--json}', function () {

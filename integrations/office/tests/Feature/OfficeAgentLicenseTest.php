@@ -193,6 +193,36 @@ PHP;
         $this->assertStringNotContainsString('"path":"\/update"', file_get_contents($this->dir.'/requests'));
     }
 
+    public function test_status_polling_does_not_spend_check_install_or_activation_limits(): void
+    {
+        $user = User::factory()->make(['id' => 81, 'role' => 'admin', 'is_active' => true]);
+        $this->actingAs($user);
+        for ($i = 0; $i < 8; $i++) {
+            $this->getJson('/settings/system-update/status')->assertOk();
+        }
+        $this->postJson('/settings/system-update/check')->assertOk()->assertJsonPath('update.version', '3.8.23');
+        $this->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])->assertStatus(202);
+        $this->post('/license/reactivate', ['license_key' => 'OFF-TEST-AAAA-BBBB-CCCC'])->assertRedirect('/');
+    }
+
+    public function test_check_limit_is_enforced_per_user_without_blocking_status_or_installation(): void
+    {
+        $user = User::factory()->make(['id' => 82, 'role' => 'admin', 'is_active' => true]);
+        $this->actingAs($user);
+        for ($i = 0; $i < 6; $i++) {
+            $this->postJson('/settings/system-update/check')->assertOk();
+        }
+        $response = $this->postJson('/settings/system-update/check')->assertStatus(429)->assertHeader('Retry-After');
+        $this->assertGreaterThan(0, $response->json('retry_after'));
+        $this->assertStringNotContainsString('Too Many Attempts', $response->json('message'));
+        $this->getJson('/settings/system-update/status')->assertOk();
+        $this->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])->assertStatus(202);
+        $other = User::factory()->make(['id' => 83, 'role' => 'general_manager', 'is_active' => true]);
+        $this->actingAs($other)->postJson('/settings/system-update/check')->assertOk();
+        $this->travel(61)->seconds();
+        $this->actingAs($user)->postJson('/settings/system-update/check')->assertOk();
+    }
+
     public function test_settings_tile_is_visible_only_to_the_two_administrator_roles(): void
     {
         $backup = \Mockery::mock(BackupManager::class);
