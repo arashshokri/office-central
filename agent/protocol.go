@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "1.4.0-rc.15"
+const version = "1.4.0-rc.16"
 const contextPrefix = "office-agent/v2\n"
 
 var b64 = base64.RawURLEncoding

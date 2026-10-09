@@ -60,6 +60,8 @@ return [
     'release_has_dependencies' => 'This release is assigned to a license or installation. Review its license and installation assignments first.',
     'product_slug_help' => 'The product identifier cannot change after a release, repository or license is linked.',
     'product_slug_locked' => 'This identifier is linked to release, repository or license history. You can edit the name and description.',
+    'product_slug_taken' => 'This identifier belongs to another product. To restore a deleted product, enter its identifier in Create product.',
+    'product_restored' => 'The deleted product was restored with the submitted details. Deleted licenses and releases were not reactivated.',
     'release_form_help' => 'Manage the release information and notes.',
     'published_release_immutable' => 'Published product, version, channel and package cannot change because existing installations depend on them. Notes and security classification remain editable.',
     'manifest_version_mismatch' => 'Version must match the Docker bundle manifest.',

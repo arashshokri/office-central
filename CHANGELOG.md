@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0-rc.16 — 2026-10-09
+
+- Creating a product with the slug of a soft-deleted product restores that product with the submitted details and preserves its numeric ID, UUID and audit history. Deleted releases and revoked licenses are not restored.
+- Preserve database slug uniqueness and reject active collisions or renaming another product into a deleted identity with a localized form error. Serialize restoration and handle concurrent create collisions without a server error.
+- Verify restored product identity, admin permissions, retained historical installation/release links, and signed revocation after parent restoration.
+
 ## 1.4.0-rc.15 — 2026-10-09
 
 - Recognize validated Office source ZIPs by their contents on GitHub import and manual upload, independently of the existing product slug. Retained archives are re-indexed without replacing packages, product identities or licenses.

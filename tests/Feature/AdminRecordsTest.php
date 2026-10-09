@@ -71,6 +71,71 @@ class AdminRecordsTest extends TestCase
         $this->assertSame('office', $license->product->fresh()->slug);
     }
 
+    public function test_creation_with_deleted_slug_restores_same_identity_with_submitted_details(): void
+    {
+        $this->admin();
+        $product = Product::create(['name' => 'Old Office', 'slug' => 'office', 'description' => 'Old description', 'status' => 'inactive']);
+        $originalUuid = $product->uuid;
+        $this->delete(route('products.destroy', $product))->assertSessionHasNoErrors();
+        $this->assertSoftDeleted($product);
+        $this->post(route('products.store'), ['name' => 'Office', 'slug' => ' office ', 'description' => 'Updated description', 'status' => 'active'])
+            ->assertSessionHasNoErrors()->assertRedirect(route('products.index'))->assertSessionHas('success', __('ui.product_restored'));
+        $this->assertNotSoftDeleted($product);
+        $this->assertSame(1, Product::withTrashed()->count());
+        $restored = Product::firstOrFail();
+        $this->assertSame($product->id, $restored->id);
+        $this->assertSame($originalUuid, $restored->uuid);
+        $this->assertSame('Office', $restored->name);
+        $this->assertSame('Updated description', $restored->description);
+        $this->assertSame('active', $restored->status);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'product.restored', 'subject_id' => $product->id]);
+    }
+
+    public function test_active_slug_collision_and_renaming_to_deleted_identity_return_localized_errors(): void
+    {
+        $this->admin();
+        $active = Product::create(['name' => 'Office', 'slug' => 'office', 'status' => 'active']);
+        $this->post(route('products.store'), ['name' => 'Duplicate', 'slug' => 'office', 'status' => 'active'])
+            ->assertSessionHasErrors(['slug' => __('ui.product_slug_taken')]);
+        $deleted = Product::create(['name' => 'Deleted', 'slug' => 'deleted', 'status' => 'active']);
+        $deleted->delete();
+        $this->put(route('products.update', $active), ['name' => 'Renamed', 'slug' => 'deleted', 'status' => 'active'])
+            ->assertSessionHasErrors(['slug' => __('ui.product_slug_taken')]);
+        $this->assertSame('office', $active->fresh()->slug);
+        $this->assertSame('Office', $active->fresh()->name);
+        $this->assertSoftDeleted($deleted);
+        $this->assertSame(2, Product::withTrashed()->count());
+    }
+
+    public function test_restoring_product_does_not_restore_deleted_releases_or_licenses_and_viewer_cannot_restore(): void
+    {
+        $this->admin();
+        $license = $this->license();
+        $product = $license->product;
+        $release = Release::create(['product_id' => $product->id, 'version' => '3.8.25', 'channel' => 'stable',
+            'status' => 'published', 'source_type' => 'github', 'package_path' => 'retained.zip', 'package_sha256' => str_repeat('a', 64)]);
+        $license->update(['release_id' => $release->id]);
+        $installation = Installation::create(['license_id' => $license->id, 'product_id' => $product->id,
+            'customer_id' => $license->customer_id, 'release_id' => $release->id, 'fingerprint' => hash('sha256', 'restored-device'),
+            'status' => 'active', 'hostname' => 'existing', 'installation_token_hash' => hash('sha256', 'restored-token')]);
+        $this->delete(route('licenses.destroy', $license))->assertSessionHasNoErrors();
+        $this->delete(route('releases.destroy', $release))->assertSessionHasNoErrors();
+        $this->delete(route('products.destroy', $product))->assertSessionHasNoErrors();
+        $this->actingAs(User::factory()->create(['role' => 'viewer', 'active' => true]))
+            ->post(route('products.store'), ['name' => 'Denied', 'slug' => 'office', 'status' => 'active'])->assertForbidden();
+        $this->assertSoftDeleted($product);
+        $this->admin();
+        $this->post(route('products.store'), ['name' => 'Restored Office', 'slug' => 'office', 'status' => 'active'])->assertSessionHasNoErrors();
+        $this->assertNotSoftDeleted($product);
+        $this->assertSoftDeleted($license);
+        $this->assertSoftDeleted($release);
+        $this->assertSame('revoked', License::withTrashed()->findOrFail($license->id)->status->value);
+        $this->assertSame(2, License::withTrashed()->findOrFail($license->id)->state_revision);
+        $this->assertSame($product->id, $installation->fresh()->product_id);
+        $this->assertSame($release->id, $installation->fresh()->release_id);
+        $this->assertSame('retained.zip', Release::withTrashed()->findOrFail($release->id)->package_path);
+    }
+
     public function test_new_codes_are_encrypted_recoverable_and_never_serialized_or_audited(): void
     {
         $this->admin();
@@ -139,6 +204,9 @@ class AdminRecordsTest extends TestCase
         $this->assertSame(1, Installation::count());
         $this->delete(route('customers.destroy', $license->customer))->assertRedirect()->assertSessionHasNoErrors();
         $this->delete(route('products.destroy', $license->product))->assertRedirect()->assertSessionHasNoErrors();
+        $this->post(route('products.store'), ['name' => 'Office restored', 'slug' => 'office', 'status' => 'active'])
+            ->assertSessionHasNoErrors();
+        $this->assertNotSoftDeleted($license->product);
         $state = $this->withHeaders(['Authorization' => 'Bearer '.$credential, 'X-Request-Nonce' => (string) Str::uuid(), 'X-Request-Timestamp' => (string) now()->timestamp])
             ->postJson('/api/v1/agent/state', ['hardware' => $hardware])->assertOk()
             ->assertJsonPath('data.state.access', 'locked')->assertJsonPath('data.state.code', 'LICENSE_REVOKED');
