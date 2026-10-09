@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-rc.18 — 2026-10-09
+
+- Publish Office v3.8.27 with Buildx/BuildKit source builds targeting the managed image. Avoid legacy builder execution of independent protected-image stages, require Buildx before compilation and load the verified image into the local Docker engine.
+- Stream the current build step and completed-phase progress to the persisted update job. Keep a bounded private build log and the final output tail instead of discarding the actual failure behind the first 3,000 characters.
+- Bound builds to 45 minutes overall and five minutes without output, with distinct timeout diagnostics. Source build failures remain before maintenance, database backup and migrations.
+- Add regression coverage for final error retention, secret/terminal-code removal, live phase reporting, deadlines and missing prerequisites without customer runtime changes. Document refreshing existing helpers and compatible Docker plugin installation.
+
 ## 1.4.0-rc.17 — 2026-10-09
 
 - Publish Office v3.8.26 with themed installation progress based on completed stages. Report 100% only after application health and Central's completion receipt succeed; retain progress and actionable errors across reloads.

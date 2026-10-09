@@ -51,15 +51,14 @@ func (c *Client) updateStage(job *UpdateJob, stage, message string, maintenance 
 	job.Maintenance = maintenance
 	return c.saveJob(*job)
 }
-func safeUpdateError(err error) string {
-	text := err.Error()
+func cleanErrorText(text string) string {
+	text = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`).ReplaceAllString(text, "")
 	text = regexp.MustCompile(`(?i)(password|token|secret|app_key)(["']?\s*[:=]\s*)[^\s,]+`).ReplaceAllString(text, "$1$2[redacted]")
 	text = regexp.MustCompile(`odt_[A-Za-z0-9]+`).ReplaceAllString(text, "[download-token]")
-	if len(text) > 3000 {
-		text = text[:3000]
-	}
 	return text
 }
+
+func safeUpdateError(err error) string { return errorSummary(cleanErrorText(err.Error()), 3000) }
 
 // SemVer precedence, including numeric prerelease identifiers. Never offer a
 // downgrade merely because a lexical comparison puts 3.10 before 3.9.
@@ -507,7 +506,17 @@ func (c *Client) updateExisting(state State, h Hardware, job *UpdateJob, profile
 		if err = c.updateStage(job, "build", "ساخت و بررسی نسخهٔ جدید؛ ممکن است چند دقیقه زمان ببرد…", priorMaintenance); err != nil {
 			return err
 		}
-		image, err = buildSourceImage(path, stage, state.Package)
+		logPath := filepath.Join(c.Root, "agent/private", "build-"+state.Package.SHA[:24]+".log")
+		image, err = buildSourceImage(path, stage, state.Package, SourceBuildOptions{LogPath: logPath, Report: func(progress int, step string) {
+			if progress > job.Progress {
+				job.Progress = progress
+			}
+			job.Message = "ساخت و بررسی نسخهٔ جدید؛ ممکن است چند دقیقه زمان ببرد…"
+			if step != "" {
+				job.Message += "\nمرحلهٔ ساخت: " + errorSummary(step, 600)
+			}
+			_ = c.saveJob(*job)
+		}})
 		if err != nil {
 			return err
 		}

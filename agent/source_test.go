@@ -69,7 +69,8 @@ func sourceUpdateFixture(t *testing.T) (*Client, State, Hardware, *UpdateJob) {
 	}
 	script := `#!/bin/sh
 case "$*" in
- build*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; if [ "$FAIL_SOURCE_BUILD" = 1 ]; then echo 'registry unavailable'; exit 1; fi;;
+ 'buildx version') if [ "$NO_BUILDX" = 1 ]; then exit 1; fi;;
+ 'buildx build '*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; if [ "$FAIL_SOURCE_BUILD" = 1 ]; then echo 'registry unavailable'; exit 1; fi;;
  'image inspect --format {{.Id}} office-source:'*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
  'run --rm --network none --entrypoint cat '*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; printf '3.8.22';;
  'run --rm --network none --entrypoint php '*) printf '%s\n' "$*" >> "$FIXTURE_LOG";;
@@ -175,7 +176,7 @@ func TestSourceUpdateBuildsBeforeMaintenanceAndKeepsCustomerDatabase(t *testing.
 	}
 	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
 	text := string(commands)
-	if !strings.Contains(text, "build --platform linux/") || strings.Index(text, "build --platform") > strings.Index(text, "mariadb-dump") {
+	if !strings.Contains(text, "buildx build --builder default --load --progress plain --platform linux/") || strings.Index(text, "buildx build") > strings.Index(text, "mariadb-dump") {
 		t.Fatal("build did not precede maintenance and backup", text)
 	}
 	for _, bad := range []string{"down", "volume rm", "migrate:fresh", "load -i", "git clone", " up -d db"} {

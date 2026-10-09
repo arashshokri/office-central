@@ -399,7 +399,7 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 				return errors.New("existing customer database detected; use connect instead of a new source installation")
 			}
 		}
-		images, err := prepareSourceRuntime(path, stage, s.Package)
+		images, err := prepareSourceRuntime(path, stage, s.Package, SourceBuildOptions{LogPath: filepath.Join(c.Root, "agent/private", "build-"+s.Package.SHA[:24]+".log")})
 		if err != nil {
 			return err
 		}

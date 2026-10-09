@@ -114,7 +114,12 @@ func extractOfficeSource(path, target string, m Manifest) error {
 	return nil
 }
 
-func buildSourceImage(path, stage string, p Package) (string, error) {
+type SourceBuildOptions struct {
+	LogPath string
+	Report  BuildReport
+}
+
+func buildSourceImage(path, stage string, p Package, options ...SourceBuildOptions) (string, error) {
 	if shaFile(path) != p.SHA {
 		return "", errors.New("source checksum differs from signed release")
 	}
@@ -124,8 +129,12 @@ func buildSourceImage(path, stage string, p Package) (string, error) {
 	image := "office-source:" + p.SHA[:24]
 	// The exact published Dockerfile builds in isolation; no customer secrets,
 	// data volumes or Docker socket are mounted into build steps.
-	if _, err := output("docker", "build", "--platform", "linux/"+runtime.GOARCH, "--target", "managed", "--build-arg", "APP_RELEASE_VERSION="+p.Version, "-t", image, stage); err != nil {
-		return "", fmt.Errorf("ساخت بستهٔ Office ناموفق بود؛ اتصال به مخازن Docker و وابستگی‌ها را بررسی کنید: %w", err)
+	var settings SourceBuildOptions
+	if len(options) > 0 {
+		settings = options[0]
+	}
+	if err := buildOfficeImage(stage, image, p.Version, settings.LogPath, settings.Report); err != nil {
+		return "", fmt.Errorf("ساخت بستهٔ Office ناموفق بود: %w", err)
 	}
 	raw, err := output("docker", "image", "inspect", "--format", "{{.Id}}", image)
 	if err != nil {
@@ -148,8 +157,8 @@ func buildSourceImage(path, stage string, p Package) (string, error) {
 // Fresh source installs use the same supported infrastructure versions as the
 // Office package builder. Existing deployments use updateExisting and retain
 // their database images, credentials and volumes.
-func prepareSourceRuntime(path, stage string, p Package) ([]Image, error) {
-	app, err := buildSourceImage(path, stage, p)
+func prepareSourceRuntime(path, stage string, p Package, options ...SourceBuildOptions) ([]Image, error) {
+	app, err := buildSourceImage(path, stage, p, options...)
 	if err != nil {
 		return nil, err
 	}
