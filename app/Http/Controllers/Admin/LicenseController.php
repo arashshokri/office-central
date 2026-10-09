@@ -20,11 +20,12 @@ class LicenseController extends Controller
     {
         return response()->view('admin.resource', [
             'title' => __('ui.licenses'),
-            'columns' => [auth()->user()->role === 'viewer' ? 'license_key_prefix' : 'license_key_encrypted', 'customer.name', 'product.name', 'status', 'state_revision', 'expires_at'],
-            'rows' => License::with(['customer', 'product'])->latest()->paginate(20),
+            'columns' => [auth()->user()->role === 'viewer' ? 'license_key_prefix' : 'license_key_encrypted', 'customer.name', 'product.name', 'release.version', 'updateRelease.version', 'status', 'expires_at'],
+            'rows' => License::with(['customer', 'product', 'release', 'updateRelease'])->latest()->paginate(20),
             'createRoute' => route('licenses.create'),
             'showRoute' => 'licenses.show',
             'deleteRoute' => 'licenses.destroy',
+            'versionRoute' => 'licenses.show',
         ])->header('Cache-Control', 'no-store, private');
     }
 
@@ -32,8 +33,8 @@ class LicenseController extends Controller
     {
         return response()->view('admin.license-show', [
             'license' => $license->load(['customer', 'product', 'release', 'updateRelease', 'installations']),
-            'updateReleases' => Release::where('product_id', $license->product_id)->where('status', 'published')
-                ->whereNotNull('runtime_manifest')->latest('published_at')->get(),
+            'updateReleases' => Release::where('product_id', $license->product_id)->get()
+                ->sort(fn ($a, $b) => version_compare($b->version, $a->version))->values(),
         ])->header('Cache-Control', 'no-store, private');
     }
 
@@ -111,14 +112,26 @@ class LicenseController extends Controller
     {
         $data = $request->validate(['release_id' => ['nullable', Rule::exists('releases', 'id')->whereNull('deleted_at')]]);
         $release = empty($data['release_id']) ? null : Release::findOrFail($data['release_id']);
-        if ($release && ($release->product_id !== $license->product_id || $release->status->value !== 'published' || ! $release->runtime_manifest)) {
+        if ($release && ($release->product_id !== $license->product_id || ! $release->isOfficeRuntimeReady())) {
             throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
         }
-        $before = $license->toArray();
-        $license->update(['update_release_id' => $release?->id, 'state_revision' => DB::raw('state_revision + 1')]);
-        $audit->record('license.update_permission_changed', $license, $before, $license->fresh()->toArray());
+        DB::transaction(function () use ($license, $release, $audit) {
+            $license = License::whereKey($license->id)->lockForUpdate()->firstOrFail();
+            if ($release) {
+                $release = Release::whereKey($release->id)->lockForUpdate()->firstOrFail();
+                if ($release->product_id !== $license->product_id || ! $release->isOfficeRuntimeReady()) {
+                    throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
+                }
+            }
+            $before = $license->toArray();
+            $license->update(['update_release_id' => $release?->id, 'state_revision' => DB::raw('state_revision + 1')]);
+            // Selecting the license version must also replace previous per-install
+            // targets; those otherwise silently take precedence over this grant.
+            $cleared = $license->installations()->whereNotNull('target_release_id')->update(['target_release_id' => null]);
+            $audit->record('license.update_permission_changed', $license, $before, $license->fresh()->toArray() + ['installation_targets_cleared' => $cleared]);
+        }, 5);
 
-        return back()->with('success', __('ui.saved'));
+        return back()->with('success', __('ui.customer_update_saved'));
     }
 
     public function replaceCode(License $license, LicenseKeyService $keys, AuditService $audit)

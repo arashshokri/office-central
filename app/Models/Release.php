@@ -38,4 +38,9 @@ class Release extends Model
     {
         return $this->belongsTo(Product::class)->withTrashed();
     }
+
+    public function isOfficeRuntimeReady(): bool
+    {
+        return $this->status === ReleaseStatus::Published && ! empty($this->runtime_manifest) && ! empty($this->package_path);
+    }
 }

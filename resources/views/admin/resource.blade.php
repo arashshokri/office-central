@@ -39,6 +39,7 @@
                     @if($hasActions)
                     <td class="actions">
                         @isset($showRoute)<a class="table-action" href="{{ route($showRoute,$row) }}">{{ __('ui.view') }}</a>@endisset
+                        @if($canManage && isset($versionRoute))<a class="table-action" href="{{ route($versionRoute,$row) }}#update-permission">{{ __('ui.manage_license_version') }}</a>@endif
                         @if($canManage && isset($editRoute))<a class="table-action" href="{{ route($editRoute,$row) }}">{{ __('ui.edit') }}</a>@endif
                         @if($canManage && ($actions ?? null)==='releases' && $row->status->value==='draft')
                             <form method="post" action="{{ route('releases.publish',$row) }}">@csrf<button>{{ __('ui.publish') }}</button></form>

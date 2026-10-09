@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-rc.10
+
+- Add direct license version management from the license list, with installed and authorized version summaries.
+- Explain draft and source-only releases in the version selector instead of hiding them; only published runtime packages can be granted.
+- Replace stale per-installation targets when saving a license update grant, so the signed Office offer follows the selected version.
+- Cover administrator permissions, unavailable packages and the complete grant-to-signed-offer workflow without changing installed versions or consumed activation codes.
+
 ## 1.4.0-rc.9
 
 - Match Office license, activation and maintenance screens to its existing theme and local assets.

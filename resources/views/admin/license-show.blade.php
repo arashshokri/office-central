@@ -21,12 +21,37 @@
 @endif
 
 @if(auth()->user()->role !== 'viewer')
-<section class="panel update-permission">
+<section class="panel update-permission" id="update-permission">
     <div class="section-heading"><div><h2>{{ __('ui.customer_update_permission') }}</h2><p>{{ __('ui.customer_update_help') }}</p></div><x-icon name="upload"/></div>
+    <div class="license-version-summary">
+        <div><small>{{ __('ui.installed_customer_versions') }}</small><strong dir="ltr">{{ $license->installations->pluck('application_version')->filter()->unique()->implode(' / ') ?: '—' }}</strong></div>
+        <div><small>{{ __('ui.allowed_update_version') }}</small><strong>{{ $license->updateRelease ? 'v'.$license->updateRelease->version : __('ui.no_update_permission') }}</strong></div>
+    </div>
     <form class="permission-form" method="post" action="{{ route('licenses.update-release', $license) }}">@csrf @method('PUT')
-        <label>{{ __('ui.allowed_update_version') }}<select name="release_id"><option value="">{{ __('ui.no_update_permission') }}</option>@foreach($updateReleases as $release)<option value="{{ $release->id }}" @selected($license->update_release_id === $release->id)>v{{ $release->version }}{{ $release->is_security ? ' — '.__('ui.security_update') : '' }}</option>@endforeach</select></label>
-        <button class="primary">{{ __('ui.save') }}</button>
+        <label for="allowedUpdateRelease">{{ __('ui.allowed_update_version') }}
+            <select id="allowedUpdateRelease" name="release_id">
+                <option value="">{{ __('ui.no_update_permission') }}</option>
+                @foreach($updateReleases as $release)
+                    <option value="{{ $release->id }}"
+                        @selected((string)old('release_id',$license->update_release_id)===(string)$release->id)
+                        @disabled(!$release->isOfficeRuntimeReady())>
+                        v{{ $release->version }} — {{ __('ui.channel_'.$release->channel->value) }}
+                        @if(!$release->isOfficeRuntimeReady())
+                            — {{ __($release->status->value !== 'published' ? 'ui.update_release_unpublished' : 'ui.update_release_missing_runtime') }}
+                        @elseif($release->is_security)
+                            — {{ __('ui.security_update') }}
+                        @endif
+                    </option>
+                @endforeach
+            </select>
+            @error('release_id')<small class="field-error">{{ $message }}</small>@enderror
+        </label>
+        <button class="primary">{{ __('ui.save_update_permission') }}</button>
     </form>
+    <p class="muted version-permission-help">{{ __('ui.customer_update_workflow') }}</p>
+    @if(!$updateReleases->contains(fn($release) => $release->isOfficeRuntimeReady()))<div class="flash version-permission-help">{{ __('ui.no_ready_update_release') }}</div>@endif
+    @if($license->installations->contains(fn($installation) => $installation->target_release_id))<p class="muted version-permission-help">{{ __('ui.license_version_overrides_target') }}</p>@endif
+    <div class="form-actions"><a class="secondary button" href="{{ route('releases.index') }}">{{ __('ui.releases') }}</a><a class="secondary button" href="{{ route('releases.create') }}">{{ __('ui.upload_runtime_release') }}</a><a class="table-action" href="{{ route('repositories.index') }}">{{ __('ui.repositories') }}</a></div>
 </section>
 @endif
 

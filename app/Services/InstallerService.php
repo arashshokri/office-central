@@ -220,7 +220,7 @@ final class InstallerService
     {
         if (! $installation->completed_at) { return null; }
         $release = $installation->targetRelease ?? $installation->license->updateRelease;
-        if (! $release || $release->status->value !== 'published' || ! $release->runtime_manifest
+        if (! $release || ! $release->isOfficeRuntimeReady()
             || $release->product_id !== $installation->product_id
             || ! version_compare($release->version, $installation->application_version ?: '0.0.0', '>')) { return null; }
         return $release;
