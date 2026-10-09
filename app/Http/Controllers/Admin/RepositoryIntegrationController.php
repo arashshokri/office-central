@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Release;
 use App\Models\RepositoryIntegration;
 use App\Services\AuditService;
+use App\Services\OfficeSourceService;
 use App\Services\PackageService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\HttpClientException;
@@ -142,6 +143,19 @@ class RepositoryIntegrationController extends Controller
                     && ($integration->release_channel !== 'stable' || ! ($tag['prerelease'] ?? true))))
                 ->map(fn ($tag) => $isOffice ? array_merge($tag, ['name' => $tag['tag_name'] ?? '']) : $tag)
                 ->filter(fn ($tag) => preg_match('/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/D', $tag['name'] ?? ''));
+            if ($isOffice) {
+                // Git tags also work when no GitHub Release/asset was created.
+                // Prefer the runtime asset when a tag has a matching Release.
+                $gitTags = Http::withHeaders($headers)->connectTimeout(5)->timeout(30)
+                    ->get("https://api.github.com/repos/{$owner}/{$repository}/tags", ['per_page' => 100])->throw();
+                // A draft or excluded prerelease must not be reintroduced by
+                // the tag fallback just because it has no published asset.
+                $releaseNames = collect($response->json())->pluck('tag_name')->filter()->all();
+                $tags = $tags->concat(collect($gitTags->json())->filter(fn ($tag) => is_array($tag)
+                    && preg_match('/^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/D', $tag['name'] ?? '')
+                    && ($integration->release_channel !== 'stable' || ! str_contains($tag['name'], '-'))
+                    && ! in_array($tag['name'], $releaseNames, true)));
+            }
             $tag = $tags->sort(fn ($a, $b) => version_compare(ltrim($b['name'], 'vV'), ltrim($a['name'], 'vV')))->first();
             if (! $tag || ! preg_match('/^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/', $tag['name'], $matches)) {
                 throw new \RuntimeException('No semantic version tag was found.');
@@ -150,9 +164,6 @@ class RepositoryIntegrationController extends Controller
             $version = $matches[1];
             $existing = Release::withTrashed()->where('product_id', $integration->product_id)->where('version', $version)->where('channel', $integration->release_channel)->first();
             if ($existing) {
-                if ($isOffice && ! $existing->runtime_manifest) {
-                    throw new \RuntimeException(__('ui.repository_source_conflict'));
-                }
                 if (! $existing->trashed() && $existing->package_path && Storage::disk(config('office.package_disk'))->exists($existing->package_path)) {
                     $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
 
@@ -172,16 +183,20 @@ class RepositoryIntegrationController extends Controller
                     }
                     $filename = "office-runtime-{$version}-{$architecture}.zip";
                     $assets = collect($tag['assets'] ?? [])->filter(fn ($item) => ($item['name'] ?? '') === $filename && ($item['state'] ?? '') === 'uploaded');
-                    if ($assets->count() !== 1 || ! is_int($assets->first()['id'] ?? null)) {
-                        throw new \RuntimeException(__('ui.repository_runtime_missing', ['filename' => $filename]));
+                    if ($assets->count() > 1) {
+                        throw new \RuntimeException('Duplicate runtime assets.');
                     }
-                    $asset = $assets->first();
-                    if (($asset['size'] ?? 0) <= 0 || $asset['size'] > 20 * 1024 ** 3) {
-                        throw new \RuntimeException('Runtime asset size is invalid.');
+                    if ($assets->count() === 1) {
+                        $asset = $assets->first();
+                        if (! is_int($asset['id'] ?? null) || ($asset['size'] ?? 0) <= 0 || $asset['size'] > 20 * 1024 ** 3) {
+                            throw new \RuntimeException('Runtime asset identity or size is invalid.');
+                        }
+                        $zipballUrl = "https://api.github.com/repos/{$owner}/{$repository}/releases/assets/{$asset['id']}";
+                        $downloadHeaders['Accept'] = 'application/octet-stream';
                     }
-                    $zipballUrl = "https://api.github.com/repos/{$owner}/{$repository}/releases/assets/{$asset['id']}";
-                    $downloadHeaders['Accept'] = 'application/octet-stream';
-                } else {
+                }
+                if (! $asset) {
+                    $filename = $tag['name'].'.zip';
                     $zipballUrl = (string) ($tag['zipball_url'] ?? '');
                     $zipballHost = strtolower((string) parse_url($zipballUrl, PHP_URL_HOST));
                     if (parse_url($zipballUrl, PHP_URL_SCHEME) !== 'https' || ! in_array($zipballHost, ['api.github.com', 'codeload.github.com'], true)) {
@@ -192,7 +207,13 @@ class RepositoryIntegrationController extends Controller
                     ->connectTimeout(5)->timeout($isOffice ? 1800 : 180)->sink($temporaryPath)->get($zipballUrl)->throw();
                 $upload = new UploadedFile($temporaryPath, $filename, 'application/zip', null, true);
                 $inspection = $packages->inspect($upload);
-                if ($isOffice && (($inspection['runtime_manifest']['version'] ?? '') !== $version
+                if ($isOffice && ! $asset) {
+                    $inspection['source_manifest'] = app(OfficeSourceService::class)->inspect($upload);
+                    if ($inspection['source_manifest']['version'] !== $version) {
+                        throw new \RuntimeException('Office source VERSION differs from its GitHub tag.');
+                    }
+                }
+                if ($isOffice && $asset && (($inspection['runtime_manifest']['version'] ?? '') !== $version
                     || ($inspection['runtime_manifest']['architecture'] ?? '') !== $architecture)) {
                     throw new \RuntimeException('Runtime manifest does not match the GitHub release version or architecture.');
                 }
@@ -227,6 +248,9 @@ class RepositoryIntegrationController extends Controller
                             if ($release->trashed()) {
                                 $release->restore();
                             }
+                            if (! $release->source_manifest && isset($inspection['source_manifest'])) {
+                                $release->update(['source_manifest' => $inspection['source_manifest']]);
+                            }
                         } else {
                             $release = Release::create([
                                 'uuid' => $uuid, 'product_id' => $integration->product_id,
@@ -237,6 +261,7 @@ class RepositoryIntegrationController extends Controller
                                 'package_filename' => $filename, 'package_path' => $path,
                                 'package_size' => $inspection['size'], 'package_sha256' => $inspection['sha256'],
                                 'runtime_manifest' => $inspection['runtime_manifest'] ?? null,
+                                'source_manifest' => $inspection['source_manifest'] ?? null,
                                 'git_commit' => data_get($tag, 'commit.sha'),
                                 'published_at' => $integration->auto_publish ? now() : null,
                             ]);

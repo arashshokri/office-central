@@ -19,6 +19,9 @@ final class PackageService
             $total = 0; $names = [];
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $entry = $zip->statIndex($i); $name = $entry['name'];
+                if (($entry['encryption_method'] ?? 0) !== 0) {
+                    throw new \InvalidArgumentException('Encrypted ZIP entries are not supported.');
+                }
                 $zip->getExternalAttributesIndex($i, $opsys, $attrs);
                 if (isset($names[$name]) || str_contains($name, '\\') || str_contains($name, "\0")
                     || str_starts_with($name, '/') || preg_match('~(^|/)\.\.?(/|$)|^[A-Za-z]:~', $name)
@@ -37,9 +40,15 @@ final class PackageService
                     throw new \InvalidArgumentException('Manifest exceeds 64 KiB.');
                 }
                 $manifest = json_decode($zip->getFromName('manifest.json'), true, 32, JSON_THROW_ON_ERROR);
+                if (! is_array($manifest)) {
+                    throw new \InvalidArgumentException('Runtime manifest must be a JSON object.');
+                }
                 $this->validateManifest($manifest, $names);
                 foreach ($manifest['images'] as $image) {
                     $stream = $zip->getStream($image['archive']);
+                    if ($stream === false) {
+                        throw new \InvalidArgumentException('Image archive cannot be read.');
+                    }
                     $hash = hash_init('sha256');
                     hash_update_stream($hash, $stream); fclose($stream);
                     if (! hash_equals($image['sha256'], hash_final($hash))) {

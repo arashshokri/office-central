@@ -65,7 +65,7 @@ proxy_info() {
     else
         printf '  HTTP mode: use proxy --scheme https after configuring SSL.\n'
     fi
-    printf '  Advanced (for ZIP uploads): client_max_body_size 1024m;\n'
+    printf '  Advanced (for ZIP uploads):\n    client_max_body_size 1025m;\n    proxy_read_timeout 1800s;\n    proxy_send_timeout 1800s;\n    client_body_timeout 300s;\n'
     printf 'Update host: update.ponet.ir -> http://office-central-update:80 (Force SSL)\n'
     printf 'Panel: %s/login\n' "$(env_value APP_URL)"
 }
@@ -87,6 +87,7 @@ deploy_stack_without_build() {
     "${COMPOSE[@]}" stop web update-web queue-worker scheduler
     "${COMPOSE[@]}" up -d --wait --wait-timeout 180 postgres redis app
     "${COMPOSE[@]}" exec -T app php artisan migrate --force
+    "${COMPOSE[@]}" exec -T app php artisan office:index-source-releases
     "${COMPOSE[@]}" exec -T app php artisan optimize:clear
     "${COMPOSE[@]}" exec -T app php artisan optimize
     "${COMPOSE[@]}" up -d --wait --wait-timeout 180

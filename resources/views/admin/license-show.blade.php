@@ -34,9 +34,9 @@
                 @foreach($updateReleases as $release)
                     <option value="{{ $release->id }}"
                         @selected((string)old('release_id',$license->update_release_id)===(string)$release->id)
-                        @disabled(!$release->isOfficeRuntimeReady())>
-                        v{{ $release->version }} — {{ __('ui.channel_'.$release->channel->value) }}
-                        @if(!$release->isOfficeRuntimeReady())
+                        @disabled(!$release->isOfficeUpdateReady())>
+                        v{{ $release->version }} — {{ $release->source_type->value === 'github' ? 'GitHub' : __('ui.manual_upload') }} — {{ __('ui.channel_'.$release->channel->value) }}
+                        @if(!$release->isOfficeUpdateReady())
                             — {{ __($release->status->value !== 'published' ? 'ui.update_release_unpublished' : 'ui.update_release_missing_runtime') }}
                         @elseif($release->is_security)
                             — {{ __('ui.security_update') }}
@@ -49,7 +49,8 @@
         <button class="primary">{{ __('ui.save_update_permission') }}</button>
     </form>
     <p class="muted version-permission-help">{{ __('ui.customer_update_workflow') }}</p>
-    @if(!$updateReleases->contains(fn($release) => $release->isOfficeRuntimeReady()))<div class="flash version-permission-help">{{ __('ui.no_ready_update_release') }}</div>@endif
+    @if(!$updateReleases->contains(fn($release) => $release->isOfficeUpdateReady()))<div class="flash version-permission-help">{{ __('ui.no_ready_update_release') }}</div>@endif
+    @if($updateReleases->contains(fn($release) => $release->source_manifest))<div class="flash version-permission-help">{{ __('ui.source_update_agent_help') }}</div>@endif
     @if($license->installations->contains(fn($installation) => $installation->target_release_id))<p class="muted version-permission-help">{{ __('ui.license_version_overrides_target') }}</p>@endif
     <div class="form-actions"><a class="secondary button" href="{{ route('releases.index') }}">{{ __('ui.releases') }}</a><a class="secondary button" href="{{ route('releases.create') }}">{{ __('ui.upload_runtime_release') }}</a><a class="table-action" href="{{ route('repositories.index') }}">{{ __('ui.repositories') }}</a></div>
 </section>

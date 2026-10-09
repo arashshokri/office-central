@@ -36,9 +36,9 @@ final class InstallerController extends Controller
 
     public function state(Request $request, InstallerService $installer)
     {
-        $data = $request->validate($this->hardwareRules());
+        $data = $request->validate(array_merge($this->hardwareRules(), ['agent_version' => ['nullable', 'regex:/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/D', 'max:50']]));
 
-        return $this->respond(fn () => ['signed_state' => $installer->state($request->attributes->get('installation'), $data['hardware'])]);
+        return $this->respond(fn () => ['signed_state' => $installer->state($request->attributes->get('installation'), $data['hardware'], $data['agent_version'] ?? null)]);
     }
 
     public function complete(Request $request, InstallerService $installer)

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0-rc.13 — 2026-10-09
+
+- Import Office Git tags/source ZIPs alongside ready GitHub runtime assets; validate helper integration and VERSION before publication.
+- Permit published, validated source releases for existing Office update grants. Signed download authorization and completion receipts bind the exact ZIP checksum.
+- Agent builds source in a disposable context before maintenance, verifies the resulting managed image, and uses the existing backup/migration path while preserving the database, storage, secrets and proxy configuration.
+- Index previously retained Office source archives during Central deployment without changing original package bytes or identities.
+- Add real 0–100% upload progress, a distinct server processing state, duplicate submission prevention and actionable validation/network/proxy/session errors.
+- Convert invalid ZIP inspections to form validation errors and align PHP/Nginx upload limits and processing timeouts. NPM upload settings must also be applied externally.
+- Existing customers need a one-time agent refresh to 1.4.0-rc.13 or newer for source updates; fresh installations continue to use full Docker runtimes.
+
+
 ## 1.4.0-rc.12
 
 - Re-download and restore deleted repository releases, or repair a missing package, while preserving UUID, original checksum, publication status and history. Reject a changed payload under the same version; stage file writes before replacement.

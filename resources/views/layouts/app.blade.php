@@ -50,5 +50,6 @@
     </main>
 </div>
 <dialog class="confirm-dialog" data-confirm-dialog><form method="dialog"><div class="dialog-icon">!</div><h2>{{ __('ui.confirm_action') }}</h2><p data-confirm-message></p><div><button value="cancel" class="secondary">{{ __('ui.cancel') }}</button><button value="confirm" class="danger-button">{{ __('ui.confirm') }}</button></div></form></dialog>
+<script src="{{ asset('assets/release-upload.js') }}?v={{ config('office.version') }}" defer></script>
 </body>
 </html>

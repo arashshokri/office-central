@@ -465,10 +465,18 @@ func (c *Client) updateExisting(state State, h Hardware, job *UpdateJob, profile
 		return err
 	}
 	defer os.RemoveAll(stage)
-	if err = extractBundle(path, stage, state.Package.Manifest); err != nil {
+	image := ""
+	if state.Package.Manifest.Format == "office-source-v1" {
+		if err = c.updateStage(job, "build", "ساخت و بررسی نسخهٔ جدید؛ ممکن است چند دقیقه زمان ببرد…", priorMaintenance); err != nil {
+			return err
+		}
+		image, err = buildSourceImage(path, stage, state.Package)
+		if err != nil {
+			return err
+		}
+	} else if err = extractBundle(path, stage, state.Package.Manifest); err != nil {
 		return err
 	}
-	image := ""
 	for _, im := range state.Package.Manifest.Images {
 		if im.Role == "app" {
 			if _, err = output("docker", "load", "-i", filepath.Join(stage, im.Archive)); err != nil {

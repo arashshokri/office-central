@@ -90,6 +90,30 @@ class InstallerProtocolTest extends TestCase
         $this->assertNull($state['license']['display_key']);
     }
 
+    public function test_authorized_source_update_is_signed_downloadable_and_confirmed_without_consuming_a_new_license(): void
+    {
+        $license = $this->license();
+        $data = $this->signed('begin', $this->activation())->assertOk()->json('data');
+        $this->signed('complete', $this->receipt($license->release), $data['credential'])->assertOk();
+        $consumed = $license->fresh()->consumed_at->toISOString();
+        $source = Release::create(['product_id' => $license->product_id, 'version' => '3.8.25',
+            'channel' => 'stable', 'status' => 'published', 'source_type' => 'github', 'package_path' => 'source.zip',
+            'package_size' => 100, 'package_sha256' => str_repeat('b', 64),
+            'source_manifest' => ['format' => 'office-source-v1', 'version' => '3.8.25', 'product' => 'office',
+                'architecture' => 'any', 'source_protection' => 'none', 'source_root' => 'office-tag/']]);
+        $license->update(['update_release_id' => $source->id]);
+        $state = $this->payload($this->signed('state', ['hardware' => $this->hardware, 'agent_version' => '1.4.0-rc.13'], $data['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertTrue($state['update']['available']);
+        $this->assertSame($source->source_manifest, $state['package']['manifest']);
+        $this->assertSame('1.4.0-rc.13', Installation::first()->agent_version);
+        $this->signed('download', ['hardware' => $this->hardware, 'release_id' => $source->uuid], $data['credential'])->assertOk();
+        $this->signed('complete', $this->receipt($source), $data['credential'])->assertOk();
+        $this->assertSame('3.8.25', Installation::first()->application_version);
+        $this->assertSame($consumed, $license->fresh()->consumed_at->toISOString());
+        $state = $this->payload($this->signed('state', ['hardware' => $this->hardware], $data['credential'])->assertOk()->json('data.signed_state'));
+        $this->assertFalse($state['update']['available']);
+    }
+
     public function test_deleted_license_returns_signed_lock_to_installed_v2_agent_without_deleting_data(): void
     {
         $license = $this->license();

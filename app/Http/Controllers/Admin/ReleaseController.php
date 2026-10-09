@@ -8,6 +8,7 @@ use App\Models\License;
 use App\Models\Product;
 use App\Models\Release;
 use App\Services\AuditService;
+use App\Services\OfficeSourceService;
 use App\Services\PackageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +82,9 @@ class ReleaseController extends Controller
                 'channel' => 'required|in:stable,beta,alpha,internal',
                 'package' => ($release ? 'nullable' : 'required').'|file|mimes:zip|max:1048576'];
         }
-        $data = $request->validate($rules);
+        $data = $request->validate($rules, ['version.unique' => __('ui.release_version_exists'),
+            'package.max' => __('ui.upload_tooLarge'), 'package.mimes' => __('ui.zip_required'),
+            'package.uploaded' => __('ui.upload_php_failed')]);
         $data['is_security'] = $request->has('is_security') ? $request->boolean('is_security') : ($release?->is_security ?? false);
 
         return $data;
@@ -91,8 +94,17 @@ class ReleaseController extends Controller
     {
         $data = $this->data($request, $release);
         $file = $request->file('package');
-        $inspection = $file ? $packages->inspect($file) : null;
+        try {
+            $inspection = $file ? $packages->inspect($file) : null;
+            if ($file && ! ($inspection['runtime_manifest'] ?? null)
+                && Product::find($data['product_id'])?->slug === 'office') {
+                $inspection['source_manifest'] = app(OfficeSourceService::class)->inspect($file);
+            }
+        } catch (\InvalidArgumentException|\JsonException $error) {
+            throw ValidationException::withMessages(['package' => __('ui.invalid_package', ['reason' => $error->getMessage()])]);
+        }
         $manifest = $file ? ($inspection['runtime_manifest'] ?? null) : $release?->runtime_manifest;
+        $manifest ??= $file ? ($inspection['source_manifest'] ?? null) : $release?->source_manifest;
         if ($manifest && ($manifest['version'] ?? null) !== ($data['version'] ?? $release?->version)) {
             throw ValidationException::withMessages(['version' => __('ui.manifest_version_mismatch')]);
         }
@@ -103,10 +115,12 @@ class ReleaseController extends Controller
             $name = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($file->getClientOriginalName()));
             $newPath = "packages/{$data['product_id']}/{$uuid}/{$name}";
             if (! Storage::disk(config('office.package_disk'))->putFileAs(dirname($newPath), $file, basename($newPath))) {
-                throw new \RuntimeException('Package storage failed.');
+                Storage::disk(config('office.package_disk'))->delete($newPath);
+                throw ValidationException::withMessages(['package' => __('ui.package_storage_failed')]);
             }
             $data += ['package_filename' => $name, 'package_path' => $newPath, 'package_size' => $inspection['size'],
-                'package_sha256' => $inspection['sha256'], 'runtime_manifest' => $inspection['runtime_manifest'] ?? null];
+                'package_sha256' => $inspection['sha256'], 'runtime_manifest' => $inspection['runtime_manifest'] ?? null,
+                'source_manifest' => $inspection['source_manifest'] ?? null];
         }
         try {
             DB::transaction(function () use ($release, $data, $audit, $request) {
@@ -126,6 +140,12 @@ class ReleaseController extends Controller
                 Storage::disk(config('office.package_disk'))->delete($newPath);
             }
             throw $error;
+        }
+
+        if ($request->expectsJson()) {
+            $request->session()->flash('success', __('ui.saved'));
+
+            return response()->json(['message' => __('ui.saved'), 'redirect' => route('releases.index')]);
         }
 
         return redirect()->route('releases.index')->with('success', __('ui.saved'));

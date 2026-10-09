@@ -123,7 +123,7 @@ class RepositoryIntegrationTest extends TestCase
         $this->assertSame($body, Storage::disk('packages')->get($restored->package_path));
         $this->assertDatabaseHas('audit_logs', ['action' => 'repository.release_restored']);
         $this->assertNull($integration->fresh()->last_error);
-        Http::assertSentCount(4);
+        Http::assertSentCount(6);
     }
 
     public function test_missing_active_package_is_repaired_without_duplicate_release(): void
@@ -138,7 +138,7 @@ class RepositoryIntegrationTest extends TestCase
         $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
         $this->assertDatabaseCount('releases', 1);
         $this->assertSame($body, Storage::disk('packages')->get($release->package_path));
-        Http::assertSentCount(4);
+        Http::assertSentCount(6);
     }
 
     public function test_restoration_preserves_draft_and_does_not_auto_publish_it(): void
@@ -203,6 +203,7 @@ class RepositoryIntegrationTest extends TestCase
         $body = $this->runtimeZip();
         Http::preventStrayRequests();
         Http::fake([
+            'api.github.com/repos/owner/office/tags?*' => Http::response([]),
             'api.github.com/repos/owner/office/releases?*' => Http::response([
                 ['tag_name' => 'v4.0.0-rc.1', 'draft' => false, 'prerelease' => true, 'assets' => []],
                 ['tag_name' => 'v3.8.19', 'draft' => false, 'prerelease' => false, 'assets' => [
@@ -219,21 +220,21 @@ class RepositoryIntegrationTest extends TestCase
         Storage::disk('packages')->assertExists($release->package_path);
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/assets/123')
             && $request->hasHeader('Accept', 'application/octet-stream'));
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'zipball') || str_contains($request->url(), '/tags'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'zipball'));
     }
 
-    public function test_missing_runtime_asset_does_not_fall_back_to_source_archive(): void
+    public function test_invalid_source_fallback_is_not_registered_as_an_update(): void
     {
         $integration = $this->officeRepository();
         Http::preventStrayRequests();
-        Http::fake(['api.github.com/repos/owner/office/releases?*' => Http::response([
+        Http::fake(['api.github.com/repos/owner/office/tags?*' => Http::response([]), 'api.github.com/repos/owner/office/releases?*' => Http::response([
             ['tag_name' => 'v3.8.19', 'draft' => false, 'prerelease' => false, 'assets' => [],
                 'zipball_url' => 'https://api.github.com/source.zip'],
-        ])]);
+        ]), 'api.github.com/source.zip' => Http::response('not-a-zip')]);
         $this->post(route('repositories.sync', $integration))->assertRedirect()->assertSessionHasErrors('repository');
         $this->assertDatabaseCount('releases', 0);
-        $this->assertStringContainsString('office-runtime-3.8.19-amd64.zip', $integration->fresh()->last_error);
-        Http::assertSentCount(1);
+        $this->assertNotNull($integration->fresh()->last_error);
+        Http::assertSentCount(3);
     }
 
     public function test_mismatched_runtime_version_is_not_registered_or_published(): void
@@ -242,6 +243,7 @@ class RepositoryIntegrationTest extends TestCase
         $body = $this->runtimeZip('3.8.18');
         Http::preventStrayRequests();
         Http::fake([
+            'api.github.com/repos/owner/office/tags?*' => Http::response([]),
             'api.github.com/repos/owner/office/releases?*' => Http::response([
                 ['tag_name' => 'v3.8.19', 'draft' => false, 'prerelease' => false, 'assets' => [
                     ['id' => 456, 'name' => 'office-runtime-3.8.19-amd64.zip', 'state' => 'uploaded', 'size' => strlen($body)],
@@ -259,6 +261,7 @@ class RepositoryIntegrationTest extends TestCase
         $body = $this->runtimeZip();
         Http::preventStrayRequests();
         Http::fake([
+            'api.github.com/repos/owner/office/tags?*' => Http::response([]),
             'api.github.com/repos/owner/office/releases?*' => Http::response([
                 ['tag_name' => 'v3.8.19', 'draft' => false, 'prerelease' => false, 'assets' => [
                     ['id' => 789, 'name' => 'office-runtime-3.8.19-amd64.zip', 'state' => 'uploaded',
@@ -277,13 +280,13 @@ class RepositoryIntegrationTest extends TestCase
         $release = Release::create(['product_id' => $integration->product_id, 'version' => '3.8.19',
             'channel' => 'stable', 'status' => 'published', 'source_type' => 'github', 'package_path' => 'source.zip']);
         Http::preventStrayRequests();
-        Http::fake(['api.github.com/repos/owner/office/releases?*' => Http::response([
+        Http::fake(['api.github.com/repos/owner/office/tags?*' => Http::response([]), 'api.github.com/repos/owner/office/releases?*' => Http::response([
             ['tag_name' => 'v3.8.19', 'draft' => false, 'prerelease' => false, 'assets' => []],
         ])]);
         $this->post(route('repositories.sync', $integration))->assertRedirect()->assertSessionHasErrors('repository');
         $this->assertNull($release->fresh()->runtime_manifest);
         $this->assertDatabaseCount('releases', 1);
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
     }
 
     public function test_non_office_repository_keeps_source_tag_sync_compatibility(): void

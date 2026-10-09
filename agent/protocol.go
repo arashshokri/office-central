@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const version = "1.4.0-rc.9"
+const version = "1.4.0-rc.13"
 const contextPrefix = "office-agent/v2\n"
 
 var b64 = base64.RawURLEncoding
@@ -49,6 +49,7 @@ type Manifest struct {
 	Architecture string  `json:"architecture"`
 	Version      string  `json:"version"`
 	Images       []Image `json:"images"`
+	SourceRoot   string  `json:"source_root,omitempty"`
 }
 type Package struct {
 	Release  string   `json:"release_id"`
@@ -356,7 +357,7 @@ func (c *Client) poll(h Hardware) (State, error) {
 	var data struct {
 		Signed Envelope `json:"signed_state"`
 	}
-	if e := c.post("state", map[string]any{"hardware": h}, &data); e != nil {
+	if e := c.post("state", map[string]any{"hardware": h, "agent_version": version}, &data); e != nil {
 		return State{}, e
 	}
 	return c.accept(data.Signed, h)

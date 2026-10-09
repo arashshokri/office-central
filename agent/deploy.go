@@ -46,6 +46,14 @@ func (c *Client) composeInput(input io.Reader, args ...string) error {
 	return run(input, "docker", append(base, args...)...)
 }
 func validateManifest(m Manifest) error {
+	if m.Format == "office-source-v1" {
+		if m.Product != "office" || m.Protection != "none" || m.Architecture != "any" || len(m.Images) != 0 ||
+			!regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$`).MatchString(m.Version) ||
+			(m.SourceRoot != "" && (!regexp.MustCompile(`^[A-Za-z0-9_.-]+/$`).MatchString(m.SourceRoot) || m.SourceRoot == "../" || m.SourceRoot == "./")) {
+			return errors.New("invalid Office source manifest")
+		}
+		return nil
+	}
 	if m.Format != "office-runtime-v1" || m.Product != "office" || (m.Protection != "ioncube" && m.Protection != "none") || m.Architecture != runtime.GOARCH || len(m.Images) != 5 {
 		return errors.New("incompatible or unprotected runtime manifest")
 	}

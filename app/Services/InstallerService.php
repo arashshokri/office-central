@@ -102,11 +102,11 @@ final class InstallerService
         ];
     }
 
-    public function state(Installation $installation, array $hardware): array
+    public function state(Installation $installation, array $hardware, ?string $agentVersion = null): array
     {
         $presented = $this->hardware->make($hardware, 2);
 
-        return DB::transaction(function () use ($installation, $presented): array {
+        return DB::transaction(function () use ($installation, $presented, $agentVersion): array {
             $installation = Installation::whereKey($installation->id)->lockForUpdate()->firstOrFail();
             $installation->load(['license.product', 'license.updateRelease', 'release', 'targetRelease']);
             $license = $installation->license;
@@ -132,6 +132,7 @@ final class InstallerService
             // A cloned device must not overwrite the original's health/version.
             if (hash_equals($installation->fingerprint, $presented)) {
                 $installation->last_seen_at = now(); $installation->last_ip = request()->ip();
+                if ($agentVersion) { $installation->agent_version = $agentVersion; }
             }
             $installation->last_state_synced_at = now();
             $installation->save();
@@ -161,7 +162,7 @@ final class InstallerService
                 'package' => $release ? [
                     'release_id' => $release->uuid, 'version' => $release->version,
                     'sha256' => $release->package_sha256, 'size' => $release->package_size,
-                    'manifest' => $release->runtime_manifest,
+                    'manifest' => $release->deploymentManifest(),
                 ] : null,
             ];
 
@@ -220,7 +221,7 @@ final class InstallerService
     {
         if (! $installation->completed_at) { return null; }
         $release = $installation->targetRelease ?? $installation->license->updateRelease;
-        if (! $release || ! $release->isOfficeRuntimeReady()
+        if (! $release || ! $release->isOfficeUpdateReady()
             || $release->product_id !== $installation->product_id
             || ! version_compare($release->version, $installation->application_version ?: '0.0.0', '>')) { return null; }
         return $release;
@@ -237,7 +238,7 @@ final class InstallerService
         $this->require(! $installation->license->temporarily_locked_at, 'TEMPORARY_LOCK', 'Installation is locked.', 403);
         $release = $this->offeredUpdate($installation) ?? $installation->release;
         $this->require($release?->uuid === $data['release_id'] && $release->status->value === 'published'
-            && $release->runtime_manifest && $release->package_path, 'RELEASE_NOT_ASSIGNED', 'Only the release assigned to this installation can be downloaded.', 403);
+            && $release->deploymentManifest() && $release->package_path, 'RELEASE_NOT_ASSIGNED', 'Only the release assigned to this installation can be downloaded.', 403);
         $token = 'odt_'.Str::random(64);
         $expiry = now()->addSeconds(config('office.download_token_lifetime_seconds'));
         DownloadToken::create(['token_hash' => hash('sha256', $token), 'installation_id' => $installation->id,

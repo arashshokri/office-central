@@ -170,14 +170,14 @@ class LicenseController extends Controller
     {
         $data = $request->validate(['release_id' => ['nullable', Rule::exists('releases', 'id')->whereNull('deleted_at')]]);
         $release = empty($data['release_id']) ? null : Release::findOrFail($data['release_id']);
-        if ($release && ($release->product_id !== $license->product_id || ! $release->isOfficeRuntimeReady())) {
+        if ($release && ($release->product_id !== $license->product_id || ! $release->isOfficeUpdateReady())) {
             throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
         }
         DB::transaction(function () use ($license, $release, $audit) {
             $license = License::whereKey($license->id)->lockForUpdate()->firstOrFail();
             if ($release) {
                 $release = Release::whereKey($release->id)->lockForUpdate()->firstOrFail();
-                if ($release->product_id !== $license->product_id || ! $release->isOfficeRuntimeReady()) {
+                if ($release->product_id !== $license->product_id || ! $release->isOfficeUpdateReady()) {
                     throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
                 }
             }

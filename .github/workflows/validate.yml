@@ -20,6 +20,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --test integrations/office/tests/Js/office-system-update.test.cjs
+      - run: node --test tests/Js/release-upload.test.cjs
       - run: bash tests/Deployment/centralctl_test.sh
       - run: python3 tests/Deployment/office_source_test.py
       - run: sudo bash tests/Deployment/permissions_test.sh
