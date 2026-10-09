@@ -11,7 +11,7 @@ Laravel/PHP-FPM serves the bilingual admin panel and versioned Agent API. Postgr
 Production requires Linux, Docker Engine, Compose v2.20+, Git, OpenSSL, and an existing Nginx Proxy Manager (NPM):
 
 ```bash
-git clone --branch v1.4.0-rc.8 https://github.com/arashshokri/office-central.git office-central
+git clone --branch v1.4.0-rc.12 https://github.com/arashshokri/office-central.git office-central
 cd office-central
 sudo bash centralctl.sh install --domain scm.ponet.ir --email admin@company.com --proxy-network proxynet
 ```
@@ -27,6 +27,8 @@ Run `sudo bash centralctl.sh` for the interactive menu. `start` rebuilds/migrate
 Run `php artisan office:create-admin` for an administrator. Roles are `super_admin`, `admin`, and read-only `viewer`. The UI supports Persian RTL and English LTR and stores each user's locale. Dashboard values query live data. Admins can create, edit and delete customers/products/releases, publish immutable releases, manage licenses, and inspect installations, security events, and audits. User management is available to super administrators. See [record and license management](docs/admin-records-fa.md) for deletion rules, recoverable license codes and the simplified repository connection flow.
 
 ## Agent API
+
+Central also supports advanced customer/license/release search, manifest requirement details, reimporting deleted releases while preserving their original UUID/checksum/publication status, and a product capability catalog with per-license **future feature plans**. These plans are administrative preparation only: current Office agents continue installing the complete runtime. See the [Persian capability and modular roadmap guide](docs/modular-preparation-fa.md). No customer data is removed when changing a plan.
 
 - `POST /api/v1/agent/activate`
 - `POST /api/v1/agent/state`

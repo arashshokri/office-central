@@ -1,21 +1,22 @@
 <?php
 
-\Illuminate\Support\Facades\Route::get('/agent/bootstrap.json', \App\Http\Controllers\AgentBootstrapController::class);
-
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\LicenseController;
 use App\Http\Controllers\Admin\MonitoringController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ProductFeatureController;
 use App\Http\Controllers\Admin\ReleaseController;
 use App\Http\Controllers\Admin\RepositoryIntegrationController;
 use App\Http\Controllers\Admin\SecurityController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\AgentBootstrapController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\TwoFactorChallengeController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/agent/bootstrap.json', AgentBootstrapController::class);
 Route::get('/health', HealthController::class);
 Route::get('/login', [AuthController::class, 'loginForm'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
@@ -28,6 +29,7 @@ Route::middleware(['auth', 'role:super_admin,admin,viewer'])->group(function () 
     Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');
     Route::get('/products', [ProductController::class, 'index'])->name('products.index');
     Route::get('/releases', [ReleaseController::class, 'index'])->name('releases.index');
+    Route::get('/releases/{release}', [ReleaseController::class, 'show'])->whereNumber('release')->name('releases.show');
     Route::get('/licenses', [LicenseController::class, 'index'])->name('licenses.index');
     Route::get('/licenses/{license}', [LicenseController::class, 'show'])->whereNumber('license')->name('licenses.show');
     Route::get('/installations', [MonitoringController::class, 'installations'])->name('installations.index');
@@ -53,6 +55,14 @@ Route::middleware(['auth', 'role:super_admin,admin'])->group(function () {
     Route::delete('/releases/{release}', [ReleaseController::class, 'destroy'])->name('releases.destroy');
     Route::get('/licenses/create', [LicenseController::class, 'create'])->name('licenses.create');
     Route::post('/licenses', [LicenseController::class, 'store'])->name('licenses.store');
+    Route::get('/licenses/{license}/edit', [LicenseController::class, 'edit'])->name('licenses.edit');
+    Route::put('/licenses/{license}', [LicenseController::class, 'update'])->name('licenses.update');
+    Route::get('/features', [ProductFeatureController::class, 'index'])->name('features.index');
+    Route::get('/features/create', [ProductFeatureController::class, 'create'])->name('features.create');
+    Route::post('/features', [ProductFeatureController::class, 'store'])->name('features.store');
+    Route::get('/features/{feature}/edit', [ProductFeatureController::class, 'edit'])->name('features.edit');
+    Route::put('/features/{feature}', [ProductFeatureController::class, 'update'])->name('features.update');
+    Route::delete('/features/{feature}', [ProductFeatureController::class, 'destroy'])->name('features.destroy');
     Route::delete('/licenses/{license}', [LicenseController::class, 'destroy'])->name('licenses.destroy');
     Route::post('/licenses/{license}/replace-code', [LicenseController::class, 'replaceCode'])->middleware('throttle:6,1')->name('licenses.replace-code');
     Route::post('/releases/{release}/publish', [ReleaseController::class, 'publish'])->name('releases.publish');

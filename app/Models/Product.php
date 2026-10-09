@@ -21,4 +21,9 @@ class Product extends Model
     {
         return $this->hasMany(Release::class);
     }
+
+    public function features()
+    {
+        return $this->hasMany(ProductFeature::class)->orderBy('sort_order')->orderBy('name');
+    }
 }

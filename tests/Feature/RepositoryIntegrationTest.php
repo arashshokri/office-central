@@ -3,9 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Product;
-use App\Models\RepositoryIntegration;
 use App\Models\Release;
+use App\Models\RepositoryIntegration;
 use App\Models\User;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -54,7 +55,7 @@ class RepositoryIntegrationTest extends TestCase
         $this->assertTrue($integration->auto_publish);
     }
 
-    private function runtimeZip(string $version = '3.8.19'): string
+    private function runtimeZip(string $version = '3.8.19', string $variant = ''): string
     {
         $path = tempnam(sys_get_temp_dir(), 'repo-runtime-');
         $zip = new \ZipArchive;
@@ -62,23 +63,137 @@ class RepositoryIntegrationTest extends TestCase
         $manifest = ['format' => 'office-runtime-v1', 'product' => 'office', 'version' => $version,
             'source_protection' => 'ioncube', 'architecture' => 'amd64', 'images' => []];
         foreach (['app', 'db', 'redis', 'rdp-web', 'rdp-core'] as $role) {
-            $body = 'fixture-'.$role;
+            $body = 'fixture-'.$role.$variant;
             $zip->addFromString('images/'.$role.'.tar', $body);
             $manifest['images'][] = ['role' => $role, 'archive' => 'images/'.$role.'.tar',
                 'ref' => 'fixture/'.$role.':1', 'image_id' => 'sha256:'.str_repeat('a', 64), 'sha256' => hash('sha256', $body)];
         }
         $zip->addFromString('manifest.json', json_encode($manifest));
         $zip->close();
-        try { return file_get_contents($path); } finally { unlink($path); }
+        try {
+            return file_get_contents($path);
+        } finally {
+            unlink($path);
+        }
     }
 
     private function officeRepository(): RepositoryIntegration
     {
         $this->actingAs(User::factory()->create(['role' => 'super_admin', 'active' => true]));
         $product = Product::create(['name' => 'Office', 'slug' => 'office', 'status' => 'active']);
+
         return RepositoryIntegration::create(['product_id' => $product->id, 'provider' => 'github',
             'repository_url' => 'https://github.com/owner/office', 'branch' => 'main',
             'release_channel' => 'stable', 'enabled' => true, 'auto_publish' => true]);
+    }
+
+    private function fakeRuntimeDownload(string &$body): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(function ($request) use (&$body) {
+            if (str_contains($request->url(), '/releases/assets/123')) {
+                return Http::response($body);
+            }
+
+            return Http::response([['tag_name' => 'v3.8.19', 'draft' => false, 'prerelease' => false,
+                'body' => 'Security fixes', 'assets' => [['id' => 123, 'name' => 'office-runtime-3.8.19-amd64.zip',
+                    'state' => 'uploaded', 'size' => strlen($body), 'digest' => 'sha256:'.hash('sha256', $body)]]]]);
+        });
+    }
+
+    public function test_deleted_release_is_downloaded_again_and_restored_with_same_identity_and_history(): void
+    {
+        Storage::fake('packages');
+        $integration = $this->officeRepository();
+        $body = $this->runtimeZip();
+        $this->fakeRuntimeDownload($body);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $release = Release::firstOrFail();
+        $original = $release->only(['id', 'uuid', 'package_path', 'package_sha256', 'published_at']);
+        $this->assertSame('Security fixes', $release->release_notes);
+        $this->delete(route('releases.destroy', $release))->assertSessionHasNoErrors();
+        Storage::disk('packages')->delete($release->package_path);
+        $this->assertSoftDeleted($release);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors()
+            ->assertSessionHas('success', __('ui.repository_restored'));
+        $restored = Release::firstOrFail();
+        $this->assertEquals($original, $restored->only(array_keys($original)));
+        $this->assertSame('published', $restored->status->value);
+        $this->assertDatabaseCount('releases', 1);
+        $this->assertSame($body, Storage::disk('packages')->get($restored->package_path));
+        $this->assertDatabaseHas('audit_logs', ['action' => 'repository.release_restored']);
+        $this->assertNull($integration->fresh()->last_error);
+        Http::assertSentCount(4);
+    }
+
+    public function test_missing_active_package_is_repaired_without_duplicate_release(): void
+    {
+        Storage::fake('packages');
+        $integration = $this->officeRepository();
+        $body = $this->runtimeZip();
+        $this->fakeRuntimeDownload($body);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $release = Release::firstOrFail();
+        Storage::disk('packages')->delete($release->package_path);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('releases', 1);
+        $this->assertSame($body, Storage::disk('packages')->get($release->package_path));
+        Http::assertSentCount(4);
+    }
+
+    public function test_restoration_preserves_draft_and_does_not_auto_publish_it(): void
+    {
+        Storage::fake('packages');
+        $integration = $this->officeRepository();
+        $integration->update(['auto_publish' => false]);
+        $body = $this->runtimeZip();
+        $this->fakeRuntimeDownload($body);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $release = Release::firstOrFail();
+        $release->delete();
+        $integration->update(['auto_publish' => true]);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $this->assertSame('draft', $release->fresh()->status->value);
+        $this->assertNull($release->fresh()->published_at);
+    }
+
+    public function test_changed_payload_cannot_replace_deleted_version_and_original_file_is_preserved(): void
+    {
+        Storage::fake('packages');
+        $integration = $this->officeRepository();
+        $body = $this->runtimeZip();
+        $originalBody = $body;
+        $this->fakeRuntimeDownload($body);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $release = Release::firstOrFail();
+        $release->delete();
+        $body = $this->runtimeZip('3.8.19', '-changed');
+        $this->post(route('repositories.sync', $integration))->assertSessionHasErrors('repository');
+        $this->assertSoftDeleted($release);
+        $this->assertDatabaseCount('releases', 1);
+        $this->assertSame($originalBody, Storage::disk('packages')->get($release->package_path));
+        $this->assertSame(__('ui.repository_payload_changed'), $integration->fresh()->last_error);
+    }
+
+    public function test_failed_staging_write_does_not_restore_record_or_touch_retained_package(): void
+    {
+        Storage::fake('packages');
+        $integration = $this->officeRepository();
+        $body = $this->runtimeZip();
+        $this->fakeRuntimeDownload($body);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $release = Release::firstOrFail();
+        $release->delete();
+        $originalDisk = Storage::disk('packages');
+        $failedDisk = \Mockery::mock(FilesystemAdapter::class);
+        $failedDisk->shouldReceive('put')->once()->withArgs(fn ($path, $stream) => str_starts_with($path, $release->package_path.'.sync-') && is_resource($stream))->andReturn(false);
+        $failedDisk->shouldReceive('delete')->once()->andReturn(true);
+        $failedDisk->shouldNotReceive('move');
+        Storage::shouldReceive('disk')->andReturn($failedDisk);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasErrors('repository');
+        $this->assertSoftDeleted($release);
+        $this->assertSame($body, $originalDisk->get($release->package_path));
+        $this->assertDatabaseCount('releases', 1);
     }
 
     public function test_office_sync_downloads_protected_asset_instead_of_github_source(): void
@@ -181,7 +296,11 @@ class RepositoryIntegrationTest extends TestCase
         $zip->open($path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
         $zip->addFromString('source/artisan', '<?php');
         $zip->close();
-        try { $body = file_get_contents($path); } finally { unlink($path); }
+        try {
+            $body = file_get_contents($path);
+        } finally {
+            unlink($path);
+        }
         Http::preventStrayRequests();
         Http::fake([
             'api.github.com/repos/owner/office/tags?*' => Http::response([

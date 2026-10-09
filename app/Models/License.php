@@ -54,4 +54,22 @@ class License extends Model
     {
         return $this->belongsTo(User::class, 'temporary_locked_by');
     }
+
+    public function features()
+    {
+        return $this->belongsToMany(ProductFeature::class);
+    }
+
+    public function getInstalledVersionsAttribute(): string
+    {
+        return $this->installations->pluck('application_version')->filter()->unique()->implode(' / ') ?: '—';
+    }
+
+    public function plannedFeatures()
+    {
+        return ProductFeature::where('product_id', $this->product_id)->where('active', true)
+            ->when($this->planned_feature_policy === 'selected', fn ($q) => $q->where(fn ($q) => $q
+                ->where('is_required', true)->orWhereHas('licenses', fn ($q) => $q->whereKey($this->id))))
+            ->orderBy('sort_order')->orderBy('name');
+    }
 }

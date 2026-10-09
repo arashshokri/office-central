@@ -23,6 +23,7 @@
             @endforeach
             @if(in_array(auth()->user()->role,['super_admin','admin'],true))
                 <div class="nav-separator">{{ __('ui.system') }}</div>
+                <a class="{{ request()->routeIs('features.*')?'active':'' }}" href="{{ route('features.index') }}" title="{{ __('ui.product_features') }}"><i><x-icon name="box"/></i><span>{{ __('ui.product_features') }}</span></a>
                 <a class="{{ request()->routeIs('repositories.*')?'active':'' }}" href="{{ route('repositories.index') }}" title="{{ __('ui.repositories') }}"><i><x-icon name="code"/></i><span>{{ __('ui.repositories') }}</span></a>
             @endif
             @if(auth()->user()->role==='super_admin')

@@ -8,6 +8,7 @@
     @if($canManage && isset($createRoute))<a class="primary button" href="{{ $createRoute }}">+ {{ __('ui.create') }}</a>@endif
 </div>
 <section class="panel">
+    @isset($searchScope)@include('admin.search')<div class="list-summary">{{ __('ui.result_count', ['count' => $rows->total()]) }}</div>@endisset
     <div class="table-wrap">
         <table>
             <thead><tr>
@@ -25,6 +26,8 @@
                                 @else<span class="muted">{{ __('ui.legacy_code_unavailable_short') }}</span>@endif
                             @elseif($column === 'status' && is_string($value))
                                 <span class="badge {{ $value }}">{{ __('ui.state_'.$value) }}</span>
+                            @elseif($column === 'expires_at' && !$value)
+                                <span class="badge">{{ __('ui.lifetime_license') }}</span>
                             @elseif($value instanceof \BackedEnum)
                                 <span class="badge {{ $value->value }}">{{ __($column === 'channel' ? 'ui.channel_'.$value->value : 'ui.state_'.$value->value) }}</span>
                             @elseif($value instanceof \Carbon\CarbonInterface)
@@ -37,7 +40,7 @@
                         </td>
                     @endforeach
                     @if($hasActions)
-                    <td class="actions">
+                    <td><div class="actions">
                         @isset($showRoute)<a class="table-action" href="{{ route($showRoute,$row) }}">{{ __('ui.view') }}</a>@endisset
                         @if($canManage && isset($versionRoute))<a class="table-action" href="{{ route($versionRoute,$row) }}#update-permission">{{ __('ui.manage_license_version') }}</a>@endif
                         @if($canManage && isset($editRoute))<a class="table-action" href="{{ route($editRoute,$row) }}">{{ __('ui.edit') }}</a>@endif
@@ -45,7 +48,7 @@
                             <form method="post" action="{{ route('releases.publish',$row) }}">@csrf<button>{{ __('ui.publish') }}</button></form>
                         @endif
                         @if($canManage && isset($deleteRoute))<form method="post" action="{{ route($deleteRoute,$row) }}">@csrf @method('DELETE')<button class="danger-button" data-confirm="{{ __($deleteRoute === 'licenses.destroy' ? 'ui.confirm_delete_license' : 'ui.confirm_delete_record') }}">{{ __('ui.delete') }}</button></form>@endif
-                    </td>
+                    </div></td>
                     @endif
                 </tr>
             @empty

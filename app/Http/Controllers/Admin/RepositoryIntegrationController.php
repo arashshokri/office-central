@@ -13,6 +13,7 @@ use Illuminate\Http\Client\HttpClientException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -149,15 +150,14 @@ class RepositoryIntegrationController extends Controller
             $version = $matches[1];
             $existing = Release::withTrashed()->where('product_id', $integration->product_id)->where('version', $version)->where('channel', $integration->release_channel)->first();
             if ($existing) {
-                if ($existing->trashed()) {
-                    throw new \RuntimeException(__('ui.repository_release_archived'));
-                }
                 if ($isOffice && ! $existing->runtime_manifest) {
                     throw new \RuntimeException(__('ui.repository_source_conflict'));
                 }
-                $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
+                if (! $existing->trashed() && $existing->package_path && Storage::disk(config('office.package_disk'))->exists($existing->package_path)) {
+                    $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
 
-                return back()->with('success', __('ui.repository_already_synced'));
+                    return back()->with('success', __('ui.repository_already_synced'));
+                }
             }
 
             $temporaryPath = tempnam(sys_get_temp_dir(), 'central-release-');
@@ -202,38 +202,56 @@ class RepositoryIntegrationController extends Controller
                 if ($asset && ! empty($asset['digest']) && ! hash_equals('sha256:'.$inspection['sha256'], $asset['digest'])) {
                     throw new \RuntimeException('Runtime checksum does not match the GitHub asset digest.');
                 }
-                $uuid = (string) Str::uuid();
-                $path = "packages/{$integration->product_id}/{$uuid}/{$filename}";
-                $stream = fopen($temporaryPath, 'rb');
-                if ($stream === false) {
-                    throw new \RuntimeException('The downloaded package could not be opened.');
-                }
+                $newPath = null;
                 try {
-                    if (! Storage::disk(config('office.package_disk'))->put($path, $stream)) {
-                        throw new \RuntimeException('The downloaded package could not be stored.');
-                    }
-                } finally {
-                    fclose($stream);
-                }
+                    $restored = DB::transaction(function () use ($integration, $version, $inspection, $temporaryPath, $filename, $tag, $audit, &$newPath) {
+                        // Serialize imports for this connection, then recheck the record:
+                        // another request may have imported or deleted it during download.
+                        RepositoryIntegration::whereKey($integration->id)->lockForUpdate()->firstOrFail();
+                        $release = Release::withTrashed()->where('product_id', $integration->product_id)
+                            ->where('version', $version)->where('channel', $integration->release_channel)->lockForUpdate()->first();
+                        if ($release && (! $release->package_path || ! $release->package_sha256
+                            || ! hash_equals($release->package_sha256, $inspection['sha256']))) {
+                            throw new \RuntimeException(__('ui.repository_payload_changed'));
+                        }
+                        $before = $release?->toArray();
+                        $uuid = $release?->uuid ?? (string) Str::uuid();
+                        $path = $release?->package_path ?? "packages/{$integration->product_id}/{$uuid}/{$filename}";
+                        if (! $release) {
+                            $newPath = $path;
+                        }
+                        $this->storeDownloadedPackage($temporaryPath, $path);
+                        $restored = $release !== null;
+                        if ($release) {
+                            // Keep UUID, checksum, publication status and history unchanged.
+                            if ($release->trashed()) {
+                                $release->restore();
+                            }
+                        } else {
+                            $release = Release::create([
+                                'uuid' => $uuid, 'product_id' => $integration->product_id,
+                                'version' => $version, 'channel' => $integration->release_channel,
+                                'status' => $integration->auto_publish ? 'published' : 'draft',
+                                'source_type' => 'github', 'source_reference' => $tag['name'],
+                                'release_notes' => Str::limit((string) ($tag['body'] ?? ''), 20000, ''),
+                                'package_filename' => $filename, 'package_path' => $path,
+                                'package_size' => $inspection['size'], 'package_sha256' => $inspection['sha256'],
+                                'runtime_manifest' => $inspection['runtime_manifest'] ?? null,
+                                'git_commit' => data_get($tag, 'commit.sha'),
+                                'published_at' => $integration->auto_publish ? now() : null,
+                            ]);
+                        }
+                        $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
+                        $audit->record($restored ? 'repository.release_restored' : 'repository.release_synced', $release, $before, $release->toArray());
 
-                $release = Release::create([
-                    'uuid' => $uuid,
-                    'product_id' => $integration->product_id,
-                    'version' => $version,
-                    'channel' => $integration->release_channel,
-                    'status' => $integration->auto_publish ? 'published' : 'draft',
-                    'source_type' => 'github',
-                    'source_reference' => $tag['name'],
-                    'package_filename' => $filename,
-                    'package_path' => $path,
-                    'package_size' => $inspection['size'],
-                    'package_sha256' => $inspection['sha256'],
-                    'runtime_manifest' => $inspection['runtime_manifest'] ?? null,
-                    'git_commit' => data_get($tag, 'commit.sha'),
-                    'published_at' => $integration->auto_publish ? now() : null,
-                ]);
-                $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
-                $audit->record('repository.release_synced', $release, null, $release->toArray());
+                        return $restored;
+                    });
+                } catch (\Throwable $error) {
+                    if ($newPath) {
+                        Storage::disk(config('office.package_disk'))->delete($newPath);
+                    }
+                    throw $error;
+                }
             } finally {
                 if (isset($temporaryPath) && is_file($temporaryPath)) {
                     @unlink($temporaryPath);
@@ -249,7 +267,7 @@ class RepositoryIntegrationController extends Controller
             return back()->withErrors(['repository' => $message]);
         }
 
-        return back()->with('success', __('ui.repository_synced'));
+        return back()->with('success', __($restored ? 'ui.repository_restored' : 'ui.repository_synced'));
     }
 
     private function githubCoordinates(string $url): array
@@ -258,5 +276,25 @@ class RepositoryIntegrationController extends Controller
         abort_unless(isset($matches[1], $matches[2]), 422);
 
         return [$matches[1], preg_replace('/\.git$/', '', $matches[2])];
+    }
+
+    private function storeDownloadedPackage(string $temporaryPath, string $path): void
+    {
+        $disk = Storage::disk(config('office.package_disk'));
+        $stagingPath = $path.'.sync-'.Str::uuid();
+        $stream = fopen($temporaryPath, 'rb');
+        if ($stream === false) {
+            throw new \RuntimeException('The downloaded package could not be opened.');
+        }
+        try {
+            // The local package disk renames a complete staged file atomically.
+            // A failed write cannot truncate the retained original package.
+            if (! $disk->put($stagingPath, $stream) || ! $disk->move($stagingPath, $path)) {
+                throw new \RuntimeException('The downloaded package could not be stored.');
+            }
+        } finally {
+            fclose($stream);
+            $disk->delete($stagingPath);
+        }
     }
 }

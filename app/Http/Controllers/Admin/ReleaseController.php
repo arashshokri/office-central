@@ -18,11 +18,32 @@ use Illuminate\Validation\ValidationException;
 
 class ReleaseController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return view('admin.resource', ['title' => __('ui.releases'), 'columns' => ['product.name', 'version', 'channel', 'status', 'package_sha256'],
-            'rows' => Release::with('product')->latest()->paginate(20), 'createRoute' => route('releases.create'),
-            'actions' => 'releases', 'editRoute' => 'releases.edit', 'deleteRoute' => 'releases.destroy']);
+        $filters = $request->validate(['q' => 'nullable|string|max:255', 'product_id' => 'nullable|integer',
+            'status' => 'nullable|in:draft,published', 'channel' => 'nullable|in:stable,beta,alpha,internal', 'kind' => 'nullable|in:runtime,source,security']);
+
+        return view('admin.releases', [
+            'rows' => Release::with('product')
+                ->when($filters['q'] ?? null, fn ($q, $value) => $q->where(fn ($q) => $q->whereLike('version', '%'.$value.'%')
+                    ->orWhereLike('release_notes', '%'.$value.'%')->orWhereHas('product', fn ($q) => $q->whereLike('name', '%'.$value.'%'))))
+                ->when($filters['product_id'] ?? null, fn ($q, $id) => $q->where('product_id', $id))
+                ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+                ->when($filters['channel'] ?? null, fn ($q, $channel) => $q->where('channel', $channel))
+                ->when($filters['kind'] ?? null, function ($q, $kind) {
+                    return match ($kind) {
+                        'security' => $q->where('is_security', true),
+                        'runtime' => $q->whereNotNull('runtime_manifest'),
+                        'source' => $q->whereNull('runtime_manifest'),
+                    };
+                })->latest()->paginate(20)->withQueryString(),
+            'products' => Product::orderBy('name')->get(), 'searchScope' => 'releases',
+        ]);
+    }
+
+    public function show(Release $release)
+    {
+        return view('admin.release-show', ['release' => $release->load('product')]);
     }
 
     private function form(?Release $release = null)

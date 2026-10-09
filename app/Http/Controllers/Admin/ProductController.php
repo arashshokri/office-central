@@ -46,7 +46,7 @@ class ProductController extends Controller
         $request->merge(['slug' => trim((string) $request->input('slug')) ?: Str::slug((string) $request->input('name'))]);
         $data = $request->validate(['name' => 'required|string|max:255', 'slug' => ['required', 'alpha_dash', 'max:100', Rule::unique('products', 'slug')->ignore($product?->id)],
             'description' => 'nullable|string|max:10000', 'status' => 'required|in:active,inactive']);
-        if ($product && $data['slug'] !== $product->slug && (License::withTrashed()->where('product_id', $product->id)->exists() || $product->releases()->withTrashed()->exists() || RepositoryIntegration::where('product_id', $product->id)->exists())) {
+        if ($product && $data['slug'] !== $product->slug && (License::withTrashed()->where('product_id', $product->id)->exists() || $product->features()->exists() || $product->releases()->withTrashed()->exists() || RepositoryIntegration::where('product_id', $product->id)->exists())) {
             throw ValidationException::withMessages(['slug' => __('ui.product_slug_locked')]);
         }
 
@@ -74,7 +74,7 @@ class ProductController extends Controller
     {
         DB::transaction(function () use ($product, $audit) {
             $product = Product::whereKey($product->id)->lockForUpdate()->firstOrFail();
-            if ($product->releases()->exists() || License::where('product_id', $product->id)->exists()
+            if ($product->features()->exists() || $product->releases()->exists() || License::where('product_id', $product->id)->exists()
                 || RepositoryIntegration::where('product_id', $product->id)->exists()
                 || Installation::where('product_id', $product->id)->whereHas('license', fn ($q) => $q->whereNull('deleted_at'))->exists()) {
                 throw ValidationException::withMessages(['delete' => __('ui.product_has_dependencies')]);
@@ -84,6 +84,6 @@ class ProductController extends Controller
             $audit->record('product.deleted', $product, $before);
         });
 
-        return redirect()->route('products.index')->with('success',__('ui.deleted'));
+        return redirect()->route('products.index')->with('success', __('ui.deleted'));
     }
 }

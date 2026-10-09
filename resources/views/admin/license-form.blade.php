@@ -2,7 +2,9 @@
 @section('content')
 <div class="page-title"><h1>{{ __('ui.new_license') }}</h1></div>
 <p>{{ __('ui.helper_simple_help') }}</p>
-<form class="panel form" method="post" action="{{ route('licenses.store') }}">@csrf
+<form class="panel form record-form" method="post" action="{{ route('licenses.store') }}">@csrf
+    <label>{{ __('ui.license_name') }}<input name="display_name" maxlength="120" value="{{ old('display_name') }}"></label>
+    <label>{{ __('ui.edition') }}<input name="edition" maxlength="80" value="{{ old('edition') }}" placeholder="{{ __('ui.edition_example') }}"></label>
     <label>{{ __('ui.install_mode') }}<select name="activation_mode" id="helperMode">
         <option value="attach_once" @selected(old('activation_mode', 'attach_once') === 'attach_once')>{{ __('ui.attach_once') }}</option>
         <option value="installer_once" @selected(old('activation_mode') === 'installer_once')>{{ __('ui.installer_once') }}</option>
@@ -23,7 +25,8 @@
     <label>{{ __('ui.release') }}<select name="release_id"><option value="">{{ __('ui.existing_version_optional') }}</option>@foreach($releases as $x)<option value="{{ $x->id }}" @selected((string) old('release_id') === (string) $x->id)>{{ $x->product?->name }} / {{ $x->version }} / {{ $x->channel->value }} — {{ $x->runtime_manifest ? __('ui.protected_runtime') : __('ui.source_archive') }}</option>@endforeach</select></label>
     <label>{{ __('ui.max_installations') }}<input name="max_installations" type="number" min="1" value="{{ old('max_installations', 1) }}" required></label>
     <label>{{ __('ui.field_expires_at') }}<input name="expires_at" type="date" value="{{ old('expires_at') }}"></label>
-    <button class="primary">{{ __('ui.generate') }}</button>
+    @include('admin.feature-plan', ['license' => null])
+    <div class="form-actions"><button class="primary">{{ __('ui.generate') }}</button><a href="{{ route('licenses.index') }}">{{ __('ui.cancel') }}</a></div>
 </form>
 <script>
 (() => {

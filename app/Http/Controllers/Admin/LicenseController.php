@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\License;
 use App\Models\Product;
+use App\Models\ProductFeature;
 use App\Models\Release;
 use App\Services\AuditService;
+use App\Services\LicenseFeaturePlan;
 use App\Services\LicenseKeyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,23 +18,38 @@ use Illuminate\Validation\ValidationException;
 
 class LicenseController extends Controller
 {
-    public function index()
+    public function index(Request $request, LicenseKeyService $keys)
     {
+        $filters = $request->validate(['q' => 'nullable|string|max:255', 'product_id' => 'nullable|integer',
+            'status' => 'nullable|in:created,active,suspended,expired,revoked']);
+        $rows = License::with(['customer', 'product', 'release', 'updateRelease', 'installations'])->withCount('installations')
+            ->when($filters['q'] ?? null, fn ($q, $value) => $q->where(fn ($q) => $q
+                ->whereLike('display_name', '%'.$value.'%')->orWhereLike('license_key_prefix', '%'.$value.'%')
+                ->orWhere('license_key_hash', $keys->hash($value))->orWhereLike('edition', '%'.$value.'%')
+                ->orWhereHas('customer', fn ($q) => $q->whereLike('name', '%'.$value.'%')->orWhereLike('company_name', '%'.$value.'%'))
+                ->orWhereHas('installations', fn ($q) => $q->whereLike('application_version', '%'.$value.'%'))))
+            ->when($filters['product_id'] ?? null, fn ($q, $id) => $q->where('product_id', $id))
+            ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+            ->latest()->paginate(20)->withQueryString();
+
         return response()->view('admin.resource', [
             'title' => __('ui.licenses'),
-            'columns' => [auth()->user()->role === 'viewer' ? 'license_key_prefix' : 'license_key_encrypted', 'customer.name', 'product.name', 'release.version', 'updateRelease.version', 'status', 'expires_at'],
-            'rows' => License::with(['customer', 'product', 'release', 'updateRelease'])->latest()->paginate(20),
+            'columns' => ['display_name', 'customer.name', 'customer.company_name', 'edition', auth()->user()->role === 'viewer' ? 'license_key_prefix' : 'license_key_encrypted', 'installations_count', 'installed_versions', 'updateRelease.version', 'status', 'expires_at'],
+            'rows' => $rows,
+            'searchScope' => 'licenses', 'products' => Product::orderBy('name')->get(),
             'createRoute' => route('licenses.create'),
             'showRoute' => 'licenses.show',
             'deleteRoute' => 'licenses.destroy',
             'versionRoute' => 'licenses.show',
+            'editRoute' => 'licenses.edit',
         ])->header('Cache-Control', 'no-store, private');
     }
 
     public function show(License $license)
     {
         return response()->view('admin.license-show', [
-            'license' => $license->load(['customer', 'product', 'release', 'updateRelease', 'installations']),
+            'license' => $license->load(['customer', 'product', 'release', 'updateRelease', 'installations', 'features']),
+            'plannedFeatures' => $license->plannedFeatures()->get(),
             'updateReleases' => Release::where('product_id', $license->product_id)->get()
                 ->sort(fn ($a, $b) => version_compare($b->version, $a->version))->values(),
         ])->header('Cache-Control', 'no-store, private');
@@ -46,10 +63,40 @@ class LicenseController extends Controller
             'releases' => Release::with('product')->where('status', 'published')->get(),
             'hasOfficeRuntime' => Release::where('status', 'published')->whereNotNull('runtime_manifest')
                 ->whereHas('product', fn ($query) => $query->where('slug', 'office')->where('status', 'active'))->exists(),
+            'features' => ProductFeature::where('active', true)->orderBy('sort_order')->orderBy('name')->get(),
         ]);
     }
 
-    public function store(Request $request, LicenseKeyService $keys, AuditService $audit)
+    public function edit(License $license)
+    {
+        return response()->view('admin.license-edit', [
+            'license' => $license->load(['customer', 'product', 'features']),
+            'features' => ProductFeature::where('product_id', $license->product_id)
+                ->where(fn ($q) => $q->where('active', true)->orWhereHas('licenses', fn ($q) => $q->whereKey($license->id)))
+                ->orderBy('sort_order')->orderBy('name')->get(),
+        ])->header('Cache-Control', 'no-store, private');
+    }
+
+    public function update(Request $request, License $license, LicenseFeaturePlan $plans, AuditService $audit)
+    {
+        $data = $plans->data($request) + $request->validate(['expires_at' => 'nullable|date']);
+        $featureIds = array_map('intval', $data['features'] ?? []);
+        $changePlan = $request->has('planned_feature_policy') || $request->has('features');
+        unset($data['features']);
+        DB::transaction(function () use ($license, $data, $featureIds, $changePlan, $plans, $audit) {
+            $license = License::whereKey($license->id)->lockForUpdate()->firstOrFail();
+            $before = $license->toArray() + ['features' => $license->features()->pluck('product_features.id')->all()];
+            $license->update($data + ['state_revision' => DB::raw('state_revision + 1')]);
+            if ($changePlan) {
+                $plans->sync($license, $featureIds);
+            }
+            $audit->record('license.updated', $license, $before, $license->fresh()->toArray() + ['features' => $license->features()->pluck('product_features.id')->all()]);
+        });
+
+        return redirect()->route('licenses.show', $license)->with('success', __('ui.saved'));
+    }
+
+    public function store(Request $request, LicenseKeyService $keys, LicenseFeaturePlan $plans, AuditService $audit)
     {
         $data = $request->validate([
             'activation_mode' => ['nullable', 'in:legacy,installer_once,attach_once'],
@@ -83,16 +130,27 @@ class LicenseController extends Controller
             $data['deployment_config'] = $data['deployment'];
         }
         unset($data['deployment']);
+        $plan = $plans->data($request);
+        $featureIds = array_map('intval', $plan['features'] ?? []);
+        unset($plan['features']);
         $raw = $keys->generate();
-        $license = DB::transaction(fn () => License::create(array_merge($data, [
-            'license_key_hash' => $keys->hash($raw),
-            'license_key_prefix' => $keys->prefix($raw),
-            'license_key_encrypted' => $raw,
-            'status' => 'created',
-            'state_revision' => 1,
-            'created_by' => $request->user()->id,
-        ])));
-        $audit->record('license.generated', $license, null, ['uuid' => $license->uuid, 'status' => 'created']);
+        $license = DB::transaction(function () use ($data, $plan, $featureIds, $plans, $keys, $raw, $request, $audit) {
+            // Lock before inserting the FK, avoiding concurrent PostgreSQL
+            // key-share to update-lock upgrades during capability validation.
+            Product::whereKey($data['product_id'])->lockForUpdate()->firstOrFail();
+            $license = License::create(array_merge($data, $plan, [
+                'license_key_hash' => $keys->hash($raw),
+                'license_key_prefix' => $keys->prefix($raw),
+                'license_key_encrypted' => $raw,
+                'status' => 'created',
+                'state_revision' => 1,
+                'created_by' => $request->user()->id,
+            ]));
+            $plans->sync($license, $featureIds);
+            $audit->record('license.generated', $license, null, ['uuid' => $license->uuid, 'status' => 'created', 'features' => $featureIds]);
+
+            return $license;
+        });
 
         return redirect()->route('licenses.show', $license)
             ->with('success', __('ui.license_once'));

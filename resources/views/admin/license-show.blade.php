@@ -3,7 +3,7 @@
 @section('content')
 <div class="page-title">
     <div><h1>{{ __('ui.license_details') }}</h1><p dir="ltr">{{ $license->uuid }}</p></div>
-    <a class="secondary button" href="{{ route('licenses.index') }}">{{ __('ui.back') }}</a>
+    <div class="form-actions">@if(auth()->user()->role !== 'viewer')<a class="primary button" href="{{ route('licenses.edit',$license) }}">{{ __('ui.edit_license') }}</a>@endif<a class="secondary button" href="{{ route('licenses.index') }}">{{ __('ui.back') }}</a></div>
 </div>
 
 @if(auth()->user()->role !== 'viewer')
@@ -61,6 +61,9 @@
         <dl class="detail-list">
             <div><dt>{{ __('ui.customer') }}</dt><dd>{{ $license->customer->name }}</dd></div>
             <div><dt>{{ __('ui.product') }}</dt><dd>{{ $license->product->name }}</dd></div>
+            <div><dt>{{ __('ui.license_name') }}</dt><dd>{{ $license->display_name ?: '—' }}</dd></div>
+            <div><dt>{{ __('ui.edition') }}</dt><dd>{{ $license->edition ?: '—' }}</dd></div>
+            <div><dt>{{ __('ui.field_expires_at') }}</dt><dd>{{ $license->expires_at?->translatedFormat('Y/m/d') ?? __('ui.lifetime_license') }}</dd></div>
             <div><dt>{{ __('ui.release') }}</dt><dd>{{ $license->release?->version ?? '—' }}</dd></div>
             <div><dt>{{ __('ui.field_license_key_prefix') }}</dt><dd dir="ltr">{{ auth()->user()->role === 'viewer' ? $license->license_key_prefix.'••••' : ($license->license_key_encrypted ?? __('ui.legacy_code_unavailable_short')) }}</dd></div>
             <div><dt>{{ __('ui.max_installations') }}</dt><dd>{{ $license->max_installations }}</dd></div>
@@ -90,6 +93,11 @@
         @endif
     </section>
 </div>
+
+@if(auth()->user()->role !== 'viewer')
+<section class="panel"><div class="section-heading"><div><h2>{{ __('ui.license_controls') }}</h2><p>{{ __('ui.license_controls_help') }}</p></div></div><div class="form-actions">@foreach(['active'=>'success-button','suspended'=>'secondary','revoked'=>'danger-button'] as $status=>$class)<form method="post" action="{{ route('licenses.status',[$license,$status]) }}">@csrf<button class="{{ $class }}" @disabled($license->status->value === $status) data-confirm="{{ __('ui.confirm_license_status',['status'=>__('ui.state_'.$status)]) }}">{{ __('ui.state_'.$status) }}</button></form>@endforeach</div></section>
+<section class="panel"><div class="section-heading"><div><h2>{{ __('ui.planned_features') }}</h2><p>{{ __('ui.feature_planning_notice') }}</p></div><span class="badge draft">{{ __('ui.planning_only') }}</span></div><p>{{ __($license->planned_feature_policy === 'selected' ? 'ui.selected_product_features' : 'ui.all_product_features') }}</p><div class="feature-chips">@forelse($plannedFeatures as $feature)<span class="badge">{{ $feature->name }}@if($feature->is_required) · {{ __('ui.required_feature') }}@endif</span>@empty<span class="muted">{{ __('ui.no_features') }}</span>@endforelse</div></section>
+@endif
 
 @if(in_array($license->activation_mode, ['installer_once', 'attach_once']))
 <section class="panel installer-guide">

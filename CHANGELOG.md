@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0-rc.12
+
+- Re-download and restore deleted repository releases, or repair a missing package, while preserving UUID, original checksum, publication status and history. Reject a changed payload under the same version; stage file writes before replacement.
+- Add advanced customer, license, release and capability search; show full administrator license codes, company, installation counts and installed versions.
+- Add release notes, validated runtime requirement details and a ZIP upload area in the existing Persian/English, light/dark layout.
+- Add license name, edition and expiry editing without resetting code consumption or installation bindings; expose existing status controls with confirmation.
+- Prepare a product capability catalog and per-license future feature plans, with stable identifiers, required capabilities, same-product validation and history guards. These administrative plans do not change current Office/agent installation behavior.
+- Document the separate next phase for signed module manifests, dependency/version compatibility, entitlement enforcement and preserving customer data.
+
 ## 1.4.0-rc.11
 
 - Give Office update checks, installation, status polling and activation separate per-user throttle counters so polling cannot block a version check.

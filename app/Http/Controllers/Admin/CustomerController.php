@@ -11,10 +11,16 @@ use Illuminate\Validation\ValidationException;
 
 class CustomerController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return view('admin.resource', ['title' => __('ui.customers'), 'columns' => ['name', 'company_name', 'email', 'status'],
-            'rows' => Customer::latest()->paginate(20), 'createRoute' => route('customers.create'),
+        $filters = $request->validate(['q' => 'nullable|string|max:255', 'status' => 'nullable|in:active,inactive']);
+
+        return view('admin.resource', ['title' => __('ui.customers'), 'columns' => ['name', 'company_name', 'email', 'phone', 'licenses_count', 'status'],
+            'rows' => Customer::withCount('licenses')
+                ->when($filters['q'] ?? null, fn ($q, $value) => $q->where(fn ($q) => $q->whereLike('name', '%'.$value.'%')
+                    ->orWhereLike('company_name', '%'.$value.'%')->orWhereLike('email', '%'.$value.'%')->orWhereLike('phone', '%'.$value.'%')))
+                ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+                ->latest()->paginate(20)->withQueryString(), 'searchScope' => 'customers', 'createRoute' => route('customers.create'),
             'editRoute' => 'customers.edit', 'deleteRoute' => 'customers.destroy']);
     }
 

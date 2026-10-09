@@ -59,4 +59,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (dialog.returnValue === 'confirm' && pendingForm) pendingForm.requestSubmit();
         pendingForm = null;
     });
+
+    document.querySelectorAll('[data-feature-plan]').forEach(plan => {
+        const form = plan.closest('form');
+        const policy = plan.querySelector('[data-feature-policy]');
+        const product = form.querySelector('[name="product_id"], [data-plan-product]');
+        const update = () => {
+            const selected = policy.value === 'selected';
+            plan.querySelector('[data-feature-choices]').hidden = !selected;
+            plan.querySelectorAll('[data-feature-product]').forEach(choice => {
+                const relevant = choice.dataset.featureProduct === product?.value;
+                choice.hidden = !relevant;
+                const input = choice.querySelector('[name="features[]"]');
+                if (input) input.disabled = !selected || !relevant;
+            });
+        };
+        policy.addEventListener('change', update);
+        product?.addEventListener('change', update);
+        update();
+    });
+    document.querySelectorAll('[data-package-file]').forEach(input => input.addEventListener('change', () => {
+        const label = input.closest('label').querySelector('[data-package-name]');
+        label.textContent = input.files?.length ? input.files[0].name : '';
+    }));
 });
