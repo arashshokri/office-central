@@ -112,6 +112,18 @@ class InstallerProtocolTest extends TestCase
         $this->assertSame('3.8.25', $license->installations()->first()->application_version);
     }
 
+    public function test_verified_office_package_with_custom_product_slug_can_complete_signed_installation(): void
+    {
+        $license = $this->license();
+        $license->product->update(['slug' => 'office-customer-panel']);
+        $data = $this->signed('begin', $this->activation())->assertOk()->json('data');
+        $this->assertSame('office', $this->payload($data['signed_state'])['product']);
+        $this->assertSame('office-customer-panel', $license->product->fresh()->slug);
+        $this->signed('complete', $this->receipt($license->release), $data['credential'])->assertOk();
+        $this->assertNotNull($license->fresh()->consumed_at);
+        $this->assertSame($license->product_id, $license->installations()->firstOrFail()->product_id);
+    }
+
     public function test_authorized_source_update_is_signed_downloadable_and_confirmed_without_consuming_a_new_license(): void
     {
         $license = $this->license();

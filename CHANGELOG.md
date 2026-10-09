@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0-rc.15 — 2026-10-09
+
+- Recognize validated Office source ZIPs by their contents on GitHub import and manual upload, independently of the existing product slug. Retained archives are re-indexed without replacing packages, product identities or licenses.
+- Keep the signed v2 runtime product identity canonical (`office`) so existing Office license verification accepts packages for a customized Central product slug.
+- Report source inspection totals and precise rejection reasons even when no archive needs indexing; permit an empty legacy manifest to be filled while keeping validated published manifests immutable.
+- Upload ZIPs in authenticated 256 KiB chunks with bounded retries, real overall progress and same-page continuation. Validate ownership, size, offset and repeated chunk contents; recover partial writes after worker interruption.
+- Reuse normal package and release validation for final submission, cache successful saves for lost-response retries, preserve uploaded files for form corrections and expire abandoned private uploads after 24 hours.
+- Add regression tests for custom-product GitHub/source licensing and signed installation, interrupted/repeated uploads, final validation, cross-user access and cleanup. Document accepted GitHub ZIP structure and server upgrade steps.
+
 ## 1.4.0-rc.14 — 2026-10-09
 
 - Install a fresh Office server from a validated GitHub source ZIP using the managed build and immutable local infrastructure image IDs. Consume the one-use code only after the health/receipt flow succeeds; reject installation over unrelated existing databases.

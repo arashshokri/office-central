@@ -3,11 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Release;
-use App\Services\OfficeSourceService;
+use App\Services\OfficeReleaseReadiness;
 use Illuminate\Console\Command;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 final class IndexOfficeSources extends Command
 {
@@ -15,35 +12,31 @@ final class IndexOfficeSources extends Command
 
     protected $description = 'Validate retained Office source archives for signed source updates without changing their payloads';
 
-    public function handle(OfficeSourceService $sources): int
+    public function handle(OfficeReleaseReadiness $readiness): int
     {
-        $disk = Storage::disk(config('office.package_disk'));
-        Release::whereNull('runtime_manifest')->whereNull('source_manifest')
-            ->whereHas('product', fn ($q) => $q->where('slug', 'office'))->chunkById(20, function ($rows) use ($sources, $disk) {
-                foreach ($rows as $release) {
-                    try {
-                        $path = $disk->path($release->package_path ?? '');
-                        if (! is_file($path) || ! $release->package_sha256
-                            || ! hash_equals($release->package_sha256, hash_file('sha256', $path))) {
-                            throw new \InvalidArgumentException('Stored package missing or checksum mismatch.');
-                        }
-                        $manifest = $sources->inspect(new UploadedFile($path, 'source.zip', 'application/zip', null, true));
-                        if ($manifest['version'] !== $release->version) {
-                            throw new \InvalidArgumentException('Source VERSION differs from release version.');
-                        }
-                        DB::transaction(function () use ($release, $manifest) {
-                            $current = Release::whereKey($release->id)->lockForUpdate()->firstOrFail();
-                            if (! $current->runtime_manifest && ! $current->source_manifest
-                                && $current->package_sha256 === $release->package_sha256 && $current->version === $manifest['version']) {
-                                $current->update(['source_manifest' => $manifest]);
-                            }
-                        });
-                        $this->info('Validated Office source: '.$release->version);
-                    } catch (\InvalidArgumentException $error) {
-                        $this->warn('Office source '.$release->version.' is not ready: '.$error->getMessage());
-                    }
+        $checked = $validated = $failed = 0;
+        $this->info('Central '.trim(file_get_contents(base_path('VERSION'))).' — source package inspection');
+        Release::with('product')->chunkById(20, function ($rows) use ($readiness, &$checked, &$validated, &$failed) {
+            foreach ($rows as $release) {
+                if ($release->runtime_manifest || $release->source_manifest) {
+                    continue;
                 }
-            });
+                $checked++;
+                $error = $readiness->inspect($release);
+                $label = '#'.$release->id.' '.$release->product?->slug.' / '.$release->version;
+                if ($error || ! $release->source_manifest) {
+                    $failed++;
+                    $this->warn($label.' — not ready: '.($error ?? 'No verified Office manifest.'));
+                } else {
+                    $validated++;
+                    $this->info($label.' — verified Office source.');
+                }
+            }
+        });
+        $this->info("Checked: {$checked}; validated: {$validated}; not ready: {$failed}.");
+        if ($checked === 0) {
+            $this->comment('No unindexed releases found. Existing verified packages were left unchanged.');
+        }
 
         return self::SUCCESS;
     }

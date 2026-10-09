@@ -16,9 +16,11 @@ final class PackageService
             if ($zip->numFiles < 1 || $zip->numFiles > 100000) {
                 throw new \InvalidArgumentException('Invalid ZIP entry count.');
             }
-            $total = 0; $names = [];
+            $total = 0;
+            $names = [];
             for ($i = 0; $i < $zip->numFiles; $i++) {
-                $entry = $zip->statIndex($i); $name = $entry['name'];
+                $entry = $zip->statIndex($i);
+                $name = $entry['name'];
                 if (($entry['encryption_method'] ?? 0) !== 0) {
                     throw new \InvalidArgumentException('Encrypted ZIP entries are not supported.');
                 }
@@ -50,15 +52,22 @@ final class PackageService
                         throw new \InvalidArgumentException('Image archive cannot be read.');
                     }
                     $hash = hash_init('sha256');
-                    hash_update_stream($hash, $stream); fclose($stream);
+                    hash_update_stream($hash, $stream);
+                    fclose($stream);
                     if (! hash_equals($image['sha256'], hash_final($hash))) {
                         throw new \InvalidArgumentException('Image archive checksum does not match.');
                     }
                 }
                 $result['runtime_manifest'] = $manifest;
+            } elseif (collect(array_keys($names))->contains(fn ($name) => preg_match('~^(?:[^/]+/)?app/Providers/OfficeLicenseServiceProvider\.php$~D', $name))) {
+                // Identify Office from validated contents, independently of a product slug.
+                $result['source_manifest'] = app(OfficeSourceService::class)->inspect($file);
             }
+
             return $result;
-        } finally { $zip->close(); }
+        } finally {
+            $zip->close();
+        }
     }
 
     private function validateManifest(array $manifest, array $names): void
@@ -70,7 +79,8 @@ final class PackageService
             || ! is_array($manifest['images'] ?? null) || count($manifest['images']) !== 5) {
             throw new \InvalidArgumentException('Invalid protected Office runtime manifest.');
         }
-        $roles = []; $expected = ['manifest.json'];
+        $roles = [];
+        $expected = ['manifest.json'];
         foreach ($manifest['images'] as $image) {
             if (! in_array($image['role'] ?? '', ['app', 'db', 'redis', 'rdp-web', 'rdp-core'], true)
                 || isset($roles[$image['role']])
@@ -81,9 +91,14 @@ final class PackageService
                 || ! isset($names[$image['archive']])) {
                 throw new \InvalidArgumentException('Invalid runtime image declaration.');
             }
-            $roles[$image['role']] = true; $expected[] = $image['archive'];
+            $roles[$image['role']] = true;
+            $expected[] = $image['archive'];
         }
-        sort($expected); $actual = array_keys($names); sort($actual);
-        if ($actual !== $expected) { throw new \InvalidArgumentException('Runtime ZIP must contain only manifest and image archives.'); }
+        sort($expected);
+        $actual = array_keys($names);
+        sort($actual);
+        if ($actual !== $expected) {
+            throw new \InvalidArgumentException('Runtime ZIP must contain only manifest and image archives.');
+        }
     }
 }

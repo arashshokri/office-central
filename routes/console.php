@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\License;
+use App\Services\ReleaseUploadService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -12,5 +13,6 @@ Artisan::command('inspire', function () {
 
 Schedule::call(fn () => License::whereNotNull('expires_at')->where('expires_at', '<', now())->whereNotIn('status', ['expired', 'revoked'])->update(['status' => 'expired', 'state_revision' => DB::raw('state_revision + 1')]))->everyFiveMinutes()->name('expire-licenses')->withoutOverlapping();
 Schedule::call(fn () => DB::table('request_nonces')->where('expires_at', '<', now())->delete())->hourly()->name('cleanup-nonces')->withoutOverlapping();
+Schedule::call(fn () => app(ReleaseUploadService::class)->prune())->hourly()->name('cleanup-release-uploads')->withoutOverlapping();
 Schedule::call(fn () => DB::table('download_tokens')->where('expires_at', '<', now())->delete())->hourly()->name('cleanup-download-tokens')->withoutOverlapping();
 Schedule::call(fn () => DB::table('agent_state_snapshots')->where('issued_at', '<', now()->subDays(90))->delete())->dailyAt('03:30')->name('cleanup-agent-state-snapshots')->withoutOverlapping();

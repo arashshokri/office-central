@@ -37,12 +37,12 @@ class OfficeSourceUpdateTest extends TestCase
         return new UploadedFile($path, 'office-3.8.25.zip', 'application/zip', null, true);
     }
 
-    private function product(): Product
+    private function product(string $slug = 'office'): Product
     {
         Storage::fake('packages');
         $this->actingAs(User::factory()->create(['role' => 'admin', 'active' => true]));
 
-        return Product::create(['slug' => 'office', 'name' => 'Office', 'status' => 'active']);
+        return Product::create(['slug' => $slug, 'name' => 'Office', 'status' => 'active']);
     }
 
     public function test_github_source_upload_returns_json_and_published_release_can_be_granted(): void
@@ -196,5 +196,49 @@ class OfficeSourceUpdateTest extends TestCase
             'deployment' => ['app_url' => 'not a domain', 'admin_email' => 'admin@example.test']])
             ->assertSessionHasErrors(['deployment.app_url' => __('ui.customer_url_invalid')]);
         $this->assertDatabaseCount('licenses', 0);
+    }
+
+    public function test_stored_github_zip_with_custom_product_slug_is_repaired_and_licensed_without_renaming(): void
+    {
+        $product = $this->product('office-panel');
+        $body = file_get_contents($this->source()->getRealPath());
+        Storage::disk('packages')->put('retained.zip', $body);
+        $release = Release::create(['product_id' => $product->id, 'version' => '3.8.25', 'channel' => 'stable',
+            'status' => 'published', 'source_type' => 'github', 'package_path' => 'retained.zip',
+            'package_sha256' => hash('sha256', $body), 'source_manifest' => []]);
+        $this->artisan('office:index-source-releases')->expectsOutput('Checked: 1; validated: 1; not ready: 0.')->assertSuccessful();
+        $this->assertTrue($release->fresh()->isOfficeUpdateReady());
+        $this->assertTrue($product->supportsOfficeHelper());
+        $this->assertSame('office-panel', $product->fresh()->slug);
+        $this->assertSame($body, Storage::disk('packages')->get('retained.zip'));
+        $this->get(route('releases.show', $release))->assertSee(__('ui.ready_for_helper'));
+        $customer = Customer::create(['name' => 'Custom slug customer', 'status' => 'active']);
+        $this->post(route('licenses.store'), ['activation_mode' => 'installer_once', 'product_id' => $product->id,
+            'customer_id' => $customer->id, 'release_id' => $release->id, 'max_installations' => 1,
+            'deployment' => ['app_url' => 'https://office.customer.test', 'admin_email' => 'admin@customer.test']])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertSame($product->id, License::firstOrFail()->product_id);
+        $this->artisan('office:index-source-releases')->expectsOutput('Checked: 0; validated: 0; not ready: 0.')->assertSuccessful();
+    }
+
+    public function test_custom_slug_github_sync_and_manual_upload_recognize_only_verified_office_contents(): void
+    {
+        $product = $this->product('office-custom');
+        $source = $this->source();
+        $integration = RepositoryIntegration::create(['product_id' => $product->id, 'provider' => 'github',
+            'repository_url' => 'https://github.com/owner/office', 'branch' => 'main', 'release_channel' => 'stable',
+            'auto_publish' => true, 'enabled' => true]);
+        Http::preventStrayRequests();
+        Http::fake(['api.github.com/repos/owner/office/tags?*' => Http::response([
+            ['name' => 'v3.8.25', 'zipball_url' => 'https://api.github.com/repos/owner/office/zipball/v3.8.25']]),
+            'api.github.com/repos/owner/office/zipball/v3.8.25' => Http::response(file_get_contents($source->getRealPath()))]);
+        $this->post(route('repositories.sync', $integration))->assertSessionHasNoErrors();
+        $this->assertTrue(Release::firstOrFail()->isOfficeUpdateReady());
+        $other = Product::create(['slug' => 'another-office', 'name' => 'Office alternate', 'status' => 'active']);
+        $this->postJson(route('releases.store'), ['product_id' => $other->id, 'version' => '3.8.25', 'channel' => 'stable',
+            'package' => $source])->assertOk();
+        $this->assertTrue($other->supportsOfficeHelper());
+        $this->postJson(route('releases.store'), ['product_id' => $other->id, 'version' => '3.8.26', 'channel' => 'stable',
+            'package' => $this->source(['Dockerfile' => 'FROM production'])])->assertUnprocessable()->assertJsonValidationErrors('package');
     }
 }

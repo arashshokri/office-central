@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\MonitoringController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ProductFeatureController;
 use App\Http\Controllers\Admin\ReleaseController;
+use App\Http\Controllers\Admin\ReleaseUploadController;
 use App\Http\Controllers\Admin\RepositoryIntegrationController;
 use App\Http\Controllers\Admin\SecurityController;
 use App\Http\Controllers\Admin\UserController;
@@ -50,6 +51,9 @@ Route::middleware(['auth', 'role:super_admin,admin'])->group(function () {
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->name('products.destroy');
     Route::get('/releases/create', [ReleaseController::class, 'create'])->name('releases.create');
     Route::post('/releases', [ReleaseController::class, 'store'])->name('releases.store');
+    Route::post('/release-uploads', [ReleaseUploadController::class, 'store'])->name('release-uploads.store');
+    Route::post('/release-uploads/{upload}/chunks', [ReleaseUploadController::class, 'chunk'])->whereUuid('upload')->name('release-uploads.chunk');
+    Route::delete('/release-uploads/{upload}', [ReleaseUploadController::class, 'destroy'])->whereUuid('upload')->name('release-uploads.destroy');
     Route::get('/releases/{release}/edit', [ReleaseController::class, 'edit'])->name('releases.edit');
     Route::put('/releases/{release}', [ReleaseController::class, 'update'])->name('releases.update');
     Route::delete('/releases/{release}', [ReleaseController::class, 'destroy'])->name('releases.destroy');

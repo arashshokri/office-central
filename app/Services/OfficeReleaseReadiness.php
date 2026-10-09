@@ -11,7 +11,7 @@ final class OfficeReleaseReadiness
 {
     public function inspect(Release $release): ?string
     {
-        if ($release->runtime_manifest || $release->source_manifest || $release->product?->slug !== 'office') {
+        if ($release->runtime_manifest || $release->source_manifest) {
             return null;
         }
         try {

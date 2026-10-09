@@ -11,6 +11,7 @@ use App\Services\AuditService;
 use App\Services\OfficeReleaseReadiness;
 use App\Services\OfficeSourceService;
 use App\Services\PackageService;
+use App\Services\ReleaseUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -104,8 +105,8 @@ class ReleaseController extends Controller
         $file = $request->file('package');
         try {
             $inspection = $file ? $packages->inspect($file) : null;
-            if ($file && ! ($inspection['runtime_manifest'] ?? null)
-                && Product::find($data['product_id'])?->slug === 'office') {
+            if ($file && ! ($inspection['runtime_manifest'] ?? $inspection['source_manifest'] ?? null)
+                && Product::find($data['product_id'])?->supportsOfficeHelper()) {
                 $inspection['source_manifest'] = app(OfficeSourceService::class)->inspect($file);
             }
         } catch (\InvalidArgumentException|\JsonException $error) {
@@ -161,11 +162,23 @@ class ReleaseController extends Controller
 
     public function store(Request $request, AuditService $audit, PackageService $packages)
     {
+        if ($request->filled('package_upload')) {
+            abort_unless($request->expectsJson(), 422);
+
+            return app(ReleaseUploadService::class)->finish($request, null, fn () => $this->save($request, $audit, $packages));
+        }
+
         return $this->save($request, $audit, $packages);
     }
 
     public function update(Request $request, Release $release, AuditService $audit, PackageService $packages)
     {
+        if ($request->filled('package_upload')) {
+            abort_unless($request->expectsJson(), 422);
+
+            return app(ReleaseUploadService::class)->finish($request, $release->id, fn () => $this->save($request, $audit, $packages, $release));
+        }
+
         return $this->save($request, $audit, $packages, $release);
     }
 

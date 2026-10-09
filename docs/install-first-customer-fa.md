@@ -8,7 +8,7 @@ helper بخشی از خود Office است. نصب موجود را شناسایی
 
 ```bash
 cd /opt/office-central
-sudo bash centralctl.sh update v1.4.0-rc.14
+sudo bash centralctl.sh update v1.4.0-rc.15
 sudo bash centralctl.sh doctor
 ```
 

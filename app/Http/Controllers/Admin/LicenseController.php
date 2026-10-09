@@ -68,7 +68,7 @@ class LicenseController extends Controller
             'customers' => Customer::where('status', 'active')->get(),
             'products' => Product::where('status', 'active')->get(),
             'releases' => $releases,
-            'hasOfficeRuntime' => $releases->contains(fn ($release) => $release->product?->slug === 'office' && $release->isOfficeUpdateReady()),
+            'hasOfficeRuntime' => $releases->contains(fn ($release) => $release->isOfficeUpdateReady()),
             'features' => ProductFeature::where('active', true)->orderBy('sort_order')->orderBy('name')->get(),
         ]);
     }
@@ -144,10 +144,10 @@ class LicenseController extends Controller
             if ($release) {
                 app(OfficeReleaseReadiness::class)->inspect($release);
             }
-            if ($data['activation_mode'] === 'installer_once' && (! $release?->isOfficeUpdateReady() || $release->product->slug !== 'office')) {
+            if ($data['activation_mode'] === 'installer_once' && ! $release?->isOfficeUpdateReady()) {
                 throw ValidationException::withMessages(['release_id' => __('ui.protected_release_required')]);
             }
-            if (Product::find($data['product_id'])?->slug !== 'office') {
+            if (! Product::find($data['product_id'])?->supportsOfficeHelper()) {
                 throw ValidationException::withMessages(['product_id' => __('ui.office_product_required')]);
             }
             $data['max_installations'] = 1;

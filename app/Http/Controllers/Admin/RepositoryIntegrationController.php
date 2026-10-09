@@ -135,7 +135,7 @@ class RepositoryIntegrationController extends Controller
         }
 
         try {
-            $isOffice = $integration->product?->slug === 'office';
+            $isOffice = $integration->product?->supportsOfficeHelper();
             $response = Http::withHeaders($headers)->connectTimeout(5)->timeout(30)
                 ->get("https://api.github.com/repos/{$owner}/{$repository}/".($isOffice ? 'releases' : 'tags'), ['per_page' => 100])
                 ->throw();
@@ -214,6 +214,9 @@ class RepositoryIntegrationController extends Controller
                     if ($inspection['source_manifest']['version'] !== $version) {
                         throw new \RuntimeException('Office source VERSION differs from its GitHub tag.');
                     }
+                }
+                if (($inspection['source_manifest']['version'] ?? $inspection['runtime_manifest']['version'] ?? $version) !== $version) {
+                    throw new \RuntimeException('Package VERSION differs from its GitHub tag.');
                 }
                 if ($isOffice && $asset && (($inspection['runtime_manifest']['version'] ?? '') !== $version
                     || ($inspection['runtime_manifest']['architecture'] ?? '') !== $architecture)) {

@@ -31,7 +31,7 @@ class Release extends Model
             if ($release->getRawOriginal('status') === 'published' && $release->isDirty(['product_id', 'version', 'channel', 'package_filename', 'package_path', 'package_size', 'package_sha256', 'runtime_manifest'])) {
                 throw new \DomainException('Published release packages are immutable.');
             }
-            if ($release->getRawOriginal('status') === 'published' && $release->getRawOriginal('source_manifest') && $release->isDirty('source_manifest')) {
+            if ($release->getRawOriginal('status') === 'published' && $release->getOriginal('source_manifest') && $release->isDirty('source_manifest')) {
                 throw new \DomainException('Validated source manifests are immutable.');
             }
         });

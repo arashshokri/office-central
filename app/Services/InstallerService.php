@@ -31,7 +31,7 @@ final class InstallerService
                 throw new InstallerException(...$error);
             }
             $license->load(['product', 'release', 'customer']);
-            $this->require($license->product->slug === 'office', 'INSTALLER_PRODUCT_INVALID', 'The Office helper requires the Office product.', 422);
+            $this->require($license->product->supportsOfficeHelper(), 'INSTALLER_PRODUCT_INVALID', 'The Office helper requires a verified Office product.', 422);
             $this->require($license->product->status === 'active' && $license->customer->status === 'active', 'LICENSE_DISABLED', 'Customer or product is disabled.', 403);
             if ($license->activation_mode === 'installer_once') {
                 $this->require($license->release?->isOfficeUpdateReady() === true, 'INSTALL_PACKAGE_REQUIRED', 'Assign a published and validated Office installation package.', 409);
@@ -167,7 +167,8 @@ final class InstallerService
                 'update' => ['available' => $access === 'allowed' && $update !== null, 'release_id' => $update?->uuid,
                     'version' => $update?->version, 'security' => (bool) $update?->is_security,
                     'channel' => $update?->channel->value, 'notes' => $update ? mb_substr((string) $update->release_notes, 0, 4000) : null],
-                'product' => $license->product->slug,
+                // Protocol v2 identifies the Office runtime, not a customizable SCM slug.
+                'product' => 'office',
                 'issued_at' => now()->toISOString(),
                 'offline_policy' => 'keep_last_signed_state_indefinitely',
                 'poll_after_seconds' => config('office.agent_poll_seconds'),

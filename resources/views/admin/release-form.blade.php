@@ -2,7 +2,7 @@
 @section('content')
 @php($published = $release?->status->value === 'published')
 <div class="page-title"><div><h1>{{ __($release ? 'ui.edit_release' : 'ui.new_release') }}</h1><p>{{ __('ui.release_form_help') }}</p></div><a class="secondary button" href="{{ route('releases.index') }}">{{ __('ui.back') }}</a></div>
-<form class="panel form record-form" method="post" enctype="multipart/form-data" action="{{ $release ? route('releases.update',$release) : route('releases.store') }}" data-release-upload data-max-upload-bytes="1073741824" data-upload-text="{{ json_encode(collect(['uploading','processing','saved','failed','tooLarge','sessionExpired','rateLimit','proxyError','networkError'])->mapWithKeys(fn($key) => [$key => __('ui.upload_'.$key)])) }}">@csrf @if($release) @method('PUT') @endif
+<form class="panel form record-form" method="post" enctype="multipart/form-data" action="{{ $release ? route('releases.update',$release) : route('releases.store') }}" data-release-upload data-upload-url="{{ route('release-uploads.store', [], false) }}" data-release-id="{{ $release?->id }}" data-max-upload-bytes="1073741824" data-upload-text="{{ json_encode(collect(['uploading','processing','saved','failed','tooLarge','sessionExpired','rateLimit','proxyError','networkError','retrying','conflict'])->mapWithKeys(fn($key) => [$key => __('ui.upload_'.$key)])) }}">@csrf @if($release) @method('PUT') @endif
     @if($published)<div class="flash">{{ __('ui.published_release_immutable') }}</div>@endif
     <label>{{ __('ui.product') }}
         @if($published)<input value="{{ $release->product?->name }}" readonly>
