@@ -12,7 +12,7 @@
     <section class="panel"><h2>{{ __('ui.package_information') }}</h2><dl class="detail-list">
         <div><dt>{{ __('ui.channel') }}</dt><dd>{{ __('ui.channel_'.$release->channel->value) }}</dd></div>
         <div><dt>{{ __('ui.package') }}</dt><dd class="break-code"><bdi>{{ $release->package_filename ?? '—' }}</bdi></dd></div>
-        <div><dt>{{ __('ui.published_at') }}</dt><dd>{{ $release->published_at?->translatedFormat('Y/m/d H:i') ?? '—' }}</dd></div>
+        <div><dt>{{ __('ui.published_at') }}</dt><dd>{{ \App\Support\PanelDate::format($release->published_at) }}</dd></div>
         <div><dt>{{ __('ui.source_reference') }}</dt><dd><bdi>{{ $release->source_reference ?? '—' }}</bdi></dd></div>
         <div><dt>SHA-256</dt><dd class="break-code"><code dir="ltr">{{ $release->package_sha256 ?? '—' }}</code></dd></div>
     </dl></section>
@@ -22,7 +22,7 @@
     <div class="license-version-summary"><div><small>{{ __('ui.architecture') }}</small><strong dir="ltr">{{ $manifest['architecture'] ?? '—' }}</strong></div><div><small>{{ __('ui.source_protection') }}</small><strong dir="ltr">{{ $manifest['source_protection'] ?? '—' }}</strong></div><div><small>{{ __('ui.runtime_format') }}</small><strong dir="ltr">{{ $manifest['format'] ?? '—' }}</strong></div></div>
     @if($release->source_manifest)<p class="muted">{{ __('ui.source_update_agent_help') }}</p>@else
     <div class="table-wrap"><table><thead><tr><th>{{ __('ui.component_role') }}</th><th>{{ __('ui.docker_image') }}</th><th>SHA-256</th></tr></thead><tbody>@forelse($manifest['images'] ?? [] as $image)<tr><td><bdi>{{ $image['role'] ?? '—' }}</bdi></td><td><code dir="ltr">{{ $image['ref'] ?? '—' }}</code></td><td><code dir="ltr">{{ \Illuminate\Support\Str::limit($image['sha256'] ?? '', 16) }}</code></td></tr>@empty<tr><td colspan="3" class="empty">{{ __('ui.no_records') }}</td></tr>@endforelse</tbody></table></div>@endif
-@else<p class="muted">{{ __('ui.no_ready_update_release') }}</p>@endif
+@else<p class="muted">{{ __('ui.no_ready_update_release') }}</p>@if($readinessError ?? null)<div class="flash error">{{ __('ui.package_readiness_error') }}: {{ $readinessError }}</div>@endif @endif
 <p class="muted">{{ __('ui.runtime_components_note') }}</p>
 </section>
 @endsection

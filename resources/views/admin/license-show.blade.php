@@ -64,13 +64,13 @@
             <div><dt>{{ __('ui.product') }}</dt><dd>{{ $license->product->name }}</dd></div>
             <div><dt>{{ __('ui.license_name') }}</dt><dd>{{ $license->display_name ?: '—' }}</dd></div>
             <div><dt>{{ __('ui.edition') }}</dt><dd>{{ $license->edition ?: '—' }}</dd></div>
-            <div><dt>{{ __('ui.field_expires_at') }}</dt><dd>{{ $license->expires_at?->translatedFormat('Y/m/d') ?? __('ui.lifetime_license') }}</dd></div>
+            <div><dt>{{ __('ui.field_expires_at') }}</dt><dd>{{ $license->expires_at ? \App\Support\PanelDate::format($license->expires_at, 'Y/m/d') : __('ui.lifetime_license') }}</dd></div>
             <div><dt>{{ __('ui.release') }}</dt><dd>{{ $license->release?->version ?? '—' }}</dd></div>
             <div><dt>{{ __('ui.field_license_key_prefix') }}</dt><dd dir="ltr">{{ auth()->user()->role === 'viewer' ? $license->license_key_prefix.'••••' : ($license->license_key_encrypted ?? __('ui.legacy_code_unavailable_short')) }}</dd></div>
             <div><dt>{{ __('ui.max_installations') }}</dt><dd>{{ $license->max_installations }}</dd></div>
             <div><dt>{{ __('ui.state_revision') }}</dt><dd>{{ $license->state_revision }}</dd></div>
             <div><dt>{{ __('ui.install_mode') }}</dt><dd>{{ __('ui.'.($license->activation_mode === 'attach_once' ? 'attach_once' : ($license->activation_mode === 'installer_once' ? 'installer_once' : 'legacy_license'))) }}</dd></div>
-            <div><dt>{{ __('ui.code_consumed_at') }}</dt><dd>{{ $license->consumed_at?->toISOString() ?? '—' }}</dd></div>
+            <div><dt>{{ __('ui.code_consumed_at') }}</dt><dd>{{ \App\Support\PanelDate::format($license->consumed_at) }}</dd></div>
         </dl>
     </section>
 

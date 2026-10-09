@@ -31,7 +31,7 @@
                             @elseif($value instanceof \BackedEnum)
                                 <span class="badge {{ $value->value }}">{{ __($column === 'channel' ? 'ui.channel_'.$value->value : 'ui.state_'.$value->value) }}</span>
                             @elseif($value instanceof \Carbon\CarbonInterface)
-                                <span title="{{ $value->toDateTimeString() }}">{{ $value->diffForHumans() }}</span>
+                                <span>{{ \App\Support\PanelDate::format($value) }}</span>
                             @elseif(str_contains($column,'sha256'))
                                 <code title="{{ $value }}">{{ $value?substr($value,0,12).'…':'—' }}</code>
                             @else

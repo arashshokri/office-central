@@ -11,6 +11,7 @@ use App\Models\Release;
 use App\Services\AuditService;
 use App\Services\LicenseFeaturePlan;
 use App\Services\LicenseKeyService;
+use App\Services\OfficeReleaseReadiness;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -47,22 +48,27 @@ class LicenseController extends Controller
 
     public function show(License $license)
     {
+        $updates = Release::with('product')->where('product_id', $license->product_id)->get();
+        $updates->each(fn ($release) => app(OfficeReleaseReadiness::class)->inspect($release));
+
         return response()->view('admin.license-show', [
             'license' => $license->load(['customer', 'product', 'release', 'updateRelease', 'installations', 'features']),
             'plannedFeatures' => $license->plannedFeatures()->get(),
-            'updateReleases' => Release::where('product_id', $license->product_id)->get()
+            'updateReleases' => $updates
                 ->sort(fn ($a, $b) => version_compare($b->version, $a->version))->values(),
         ])->header('Cache-Control', 'no-store, private');
     }
 
     public function create()
     {
+        $releases = Release::with('product')->where('status', 'published')->get();
+        $releases->each(fn ($release) => app(OfficeReleaseReadiness::class)->inspect($release));
+
         return view('admin.license-form', [
             'customers' => Customer::where('status', 'active')->get(),
             'products' => Product::where('status', 'active')->get(),
-            'releases' => Release::with('product')->where('status', 'published')->get(),
-            'hasOfficeRuntime' => Release::where('status', 'published')->whereNotNull('runtime_manifest')
-                ->whereHas('product', fn ($query) => $query->where('slug', 'office')->where('status', 'active'))->exists(),
+            'releases' => $releases,
+            'hasOfficeRuntime' => $releases->contains(fn ($release) => $release->product?->slug === 'office' && $release->isOfficeUpdateReady()),
             'features' => ProductFeature::where('active', true)->orderBy('sort_order')->orderBy('name')->get(),
         ]);
     }
@@ -98,6 +104,15 @@ class LicenseController extends Controller
 
     public function store(Request $request, LicenseKeyService $keys, LicenseFeaturePlan $plans, AuditService $audit)
     {
+        $url = trim((string) $request->input('deployment.app_url', ''));
+        if ($url !== '') {
+            // The public URL is HTTPS; the Docker upstream may still use HTTP.
+            if (! str_contains($url, '://')) {
+                $url = 'https://'.$url;
+            }
+            $url = preg_replace('~^http://~i', 'https://', $url);
+            $request->merge(['deployment' => array_replace((array) $request->input('deployment', []), ['app_url' => $url])]);
+        }
         $data = $request->validate([
             'activation_mode' => ['nullable', 'in:legacy,installer_once,attach_once'],
             'deployment.app_url' => ['nullable', 'required_if:activation_mode,installer_once', 'url:https', 'max:255'],
@@ -111,6 +126,13 @@ class LicenseController extends Controller
             'release_id' => ['nullable', Rule::exists('releases', 'id')->whereNull('deleted_at')],
             'max_installations' => ['required', 'integer', 'min:1', 'max:10000'],
             'expires_at' => ['nullable', 'date', 'after:today'],
+        ], [
+            'deployment.app_url.url' => __('ui.customer_url_invalid'),
+            'deployment.app_url.required_if' => __('ui.customer_url_required'),
+            'deployment.admin_email.required_if' => __('ui.admin_email_required'),
+            'deployment.admin_email.email' => __('ui.admin_email_invalid'),
+            'expires_at.date' => __('ui.expiry_invalid'),
+            'expires_at.after' => __('ui.expiry_after_today'),
         ]);
 
         if (! empty($data['release_id'])) {
@@ -119,7 +141,10 @@ class LicenseController extends Controller
 
         if (in_array($data['activation_mode'] ?? 'legacy', ['installer_once', 'attach_once'], true)) {
             $release = Release::whereKey($data['release_id'] ?? 0)->first();
-            if ($data['activation_mode'] === 'installer_once' && ($release?->status->value !== 'published' || ! $release->runtime_manifest || $release->product->slug !== 'office')) {
+            if ($release) {
+                app(OfficeReleaseReadiness::class)->inspect($release);
+            }
+            if ($data['activation_mode'] === 'installer_once' && (! $release?->isOfficeUpdateReady() || $release->product->slug !== 'office')) {
                 throw ValidationException::withMessages(['release_id' => __('ui.protected_release_required')]);
             }
             if (Product::find($data['product_id'])?->slug !== 'office') {
@@ -170,6 +195,9 @@ class LicenseController extends Controller
     {
         $data = $request->validate(['release_id' => ['nullable', Rule::exists('releases', 'id')->whereNull('deleted_at')]]);
         $release = empty($data['release_id']) ? null : Release::findOrFail($data['release_id']);
+        if ($release) {
+            app(OfficeReleaseReadiness::class)->inspect($release);
+        }
         if ($release && ($release->product_id !== $license->product_id || ! $release->isOfficeUpdateReady())) {
             throw ValidationException::withMessages(['release_id' => __('ui.update_requires_runtime')]);
         }

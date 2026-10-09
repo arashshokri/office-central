@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-rc.14 — 2026-10-09
+
+- Install a fresh Office server from a validated GitHub source ZIP using the managed build and immutable local infrastructure image IDs. Consume the one-use code only after the health/receipt flow succeeds; reject installation over unrelated existing databases.
+- Recheck retained Office archives on release/license pages and repository resync, eliminating dependence on a manual index command. Report validation failures instead of a generic runtime-only instruction.
+- Normalize public customer domains and HTTP inputs to HTTPS with explicit form guidance and localized URL/email errors.
+- Render panel dates using Jalali in the Tehran timezone and replace native Gregorian expiry inputs with a themed Jalali calendar. Keep API/database ISO dates unchanged.
+
 ## 1.4.0-rc.13 — 2026-10-09
 
 - Import Office Git tags/source ZIPs alongside ready GitHub runtime assets; validate helper integration and VERSION before publication.

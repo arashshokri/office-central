@@ -5,6 +5,7 @@
     <title>{{ __('ui.app') }}</title>
     <script>try{document.documentElement.dataset.theme=localStorage.getItem('central-theme')==='dark'?'dark':'light';}catch{}</script>
     <link rel="stylesheet" href="{{ asset('assets/control-center.css') }}?v={{ config('office.version') }}"><link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ config('office.version') }}"><script src="{{ asset('assets/app.js') }}?v={{ config('office.version') }}" defer></script>
+    <link rel="stylesheet" href="{{ asset('assets/jalali-picker.css') }}?v={{ config('office.version') }}">
 </head>
 <body>
 <div class="mobile-backdrop" data-menu-close></div>
@@ -35,7 +36,7 @@
     <main>
         <header>
             <button class="menu" type="button" data-menu-toggle aria-controls="centralSidebar" aria-expanded="true" aria-label="{{ __('ui.toggle_sidebar') }}"><x-icon name="menu"/></button>
-            <div class="header-context"><strong>{{ __('ui.control_center') }}</strong><small>{{ now()->translatedFormat('l، j F Y') }}</small></div>
+            <div class="header-context"><strong>{{ __('ui.control_center') }}</strong><small>{{ \App\Support\PanelDate::format(now(), 'l، j F Y') }}</small></div>
             <div class="spacer"></div>
             <button class="icon-button" type="button" data-theme-toggle title="{{ __('ui.change_theme') }}" aria-label="{{ __('ui.change_theme') }}"><x-icon name="sun"/></button>
             <form method="post" action="{{ route('locale',app()->getLocale()==='fa'?'en':'fa') }}">@csrf<button class="ghost">{{ __('ui.language') }}</button></form>
@@ -51,5 +52,6 @@
 </div>
 <dialog class="confirm-dialog" data-confirm-dialog><form method="dialog"><div class="dialog-icon">!</div><h2>{{ __('ui.confirm_action') }}</h2><p data-confirm-message></p><div><button value="cancel" class="secondary">{{ __('ui.cancel') }}</button><button value="confirm" class="danger-button">{{ __('ui.confirm') }}</button></div></form></dialog>
 <script src="{{ asset('assets/release-upload.js') }}?v={{ config('office.version') }}" defer></script>
+<script src="{{ asset('assets/jalali-picker.js') }}?v={{ config('office.version') }}" defer></script>
 </body>
 </html>

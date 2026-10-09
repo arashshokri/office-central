@@ -144,3 +144,32 @@ func buildSourceImage(path, stage string, p Package) (string, error) {
 	}
 	return id, nil
 }
+
+// Fresh source installs use the same supported infrastructure versions as the
+// Office package builder. Existing deployments use updateExisting and retain
+// their database images, credentials and volumes.
+func prepareSourceRuntime(path, stage string, p Package) ([]Image, error) {
+	app, err := buildSourceImage(path, stage, p)
+	if err != nil {
+		return nil, err
+	}
+	images := []Image{{Role: "app", Ref: app, ID: app}}
+	for _, item := range []struct{ role, ref string }{
+		{"db", "mariadb:10.11.18"}, {"redis", "redis:7.4.5-alpine"},
+		{"rdp-web", "guacamole/guacamole:1.6.0"}, {"rdp-core", "guacamole/guacd:1.6.0"},
+	} {
+		if _, err = output("docker", "pull", "--platform", "linux/"+runtime.GOARCH, item.ref); err != nil {
+			return nil, fmt.Errorf("دریافت سرویس %s ناموفق بود؛ اتصال به مخزن Docker را بررسی کنید: %w", item.role, err)
+		}
+		raw, err := output("docker", "image", "inspect", "--format", "{{.Id}}", item.ref)
+		if err != nil {
+			return nil, err
+		}
+		id := strings.TrimSpace(string(raw))
+		if !regexp.MustCompile(`^sha256:[a-f0-9]{64}$`).MatchString(id) {
+			return nil, errors.New("invalid infrastructure image ID")
+		}
+		images = append(images, Image{Role: item.role, Ref: id, ID: id})
+	}
+	return images, nil
+}

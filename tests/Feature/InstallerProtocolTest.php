@@ -90,6 +90,28 @@ class InstallerProtocolTest extends TestCase
         $this->assertNull($state['license']['display_key']);
     }
 
+    public function test_fresh_source_install_requires_current_agent_and_consumes_only_after_health_receipt(): void
+    {
+        $license = $this->license();
+        $source = Release::create(['product_id' => $license->product_id, 'version' => '3.8.25', 'channel' => 'stable',
+            'status' => 'published', 'source_type' => 'github', 'package_path' => 'source.zip', 'package_size' => 100,
+            'package_sha256' => str_repeat('b', 64), 'source_manifest' => ['format' => 'office-source-v1', 'product' => 'office',
+                'version' => '3.8.25', 'architecture' => 'any', 'source_protection' => 'none', 'source_root' => 'office-tag/']]);
+        $license->update(['release_id' => $source->id]);
+        $activation = $this->activation();
+        $activation['agent_version'] = '1.4.0-rc.13';
+        $this->signed('begin', $activation)->assertStatus(409)->assertJsonPath('code', 'AGENT_UPGRADE_REQUIRED');
+        $this->assertDatabaseCount('installations', 0);
+        $activation['agent_version'] = '1.4.0-rc.14';
+        $data = $this->signed('begin', $activation)->assertOk()->json('data');
+        $this->assertNull($license->fresh()->consumed_at);
+        $this->assertSame('office-source-v1', $this->payload($data['signed_state'])['package']['manifest']['format']);
+        $this->signed('download', ['hardware' => $this->hardware, 'release_id' => $source->uuid], $data['credential'])->assertOk();
+        $this->signed('complete', $this->receipt($source), $data['credential'])->assertOk();
+        $this->assertNotNull($license->fresh()->consumed_at);
+        $this->assertSame('3.8.25', $license->installations()->first()->application_version);
+    }
+
     public function test_authorized_source_update_is_signed_downloadable_and_confirmed_without_consuming_a_new_license(): void
     {
         $license = $this->license();

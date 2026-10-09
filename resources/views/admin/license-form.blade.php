@@ -12,7 +12,7 @@
     </select></label>
     <div id="freshInstallOptions" hidden>
     @unless($hasOfficeRuntime)<p class="form-note">{{ __('ui.protected_release_required') }} <a href="{{ route('releases.create') }}">{{ __('ui.new_release') }}</a></p>@endunless
-    <label>{{ __('ui.customer_panel_url') }}<input type="url" name="deployment[app_url]" value="{{ old('deployment.app_url') }}" placeholder="https://office.customer.ir"></label>
+    <label>{{ __('ui.customer_panel_url') }}<input type="text" name="deployment[app_url]" dir="ltr" value="{{ old('deployment.app_url') }}" placeholder="https://office.customer.ir"><small>{{ __('ui.customer_https_help') }}</small>@error('deployment.app_url')<small class="field-error">{{ $message }}</small>@enderror</label>
     <label>{{ __('ui.initial_admin_email') }}<input type="email" name="deployment[admin_email]" value="{{ old('deployment.admin_email') }}"></label>
     <label>{{ __('ui.initial_admin_name') }}<input name="deployment[admin_name]" value="{{ old('deployment.admin_name', __('ui.initial_admin_default_name')) }}"></label>
     <label>{{ __('ui.web_bind_ip') }}<input name="deployment[bind_ip]" value="{{ old('deployment.bind_ip', '127.0.0.1') }}"></label>
@@ -21,10 +21,10 @@
     </div>
     <p class="form-note">{{ __('ui.installer_code_lifecycle') }}</p>
     <label>{{ __('ui.customer') }}<select name="customer_id" required>@foreach($customers as $x)<option value="{{ $x->id }}" @selected((string) old('customer_id') === (string) $x->id)>{{ $x->name }}</option>@endforeach</select></label>
-    <label>{{ __('ui.product') }}<select name="product_id" required>@foreach($products as $x)<option value="{{ $x->id }}" @selected((string) old('product_id', $products->firstWhere('slug', 'office')?->id) === (string) $x->id)>{{ $x->name }}</option>@endforeach</select></label>
-    <label>{{ __('ui.release') }}<select name="release_id"><option value="">{{ __('ui.existing_version_optional') }}</option>@foreach($releases as $x)<option value="{{ $x->id }}" @selected((string) old('release_id') === (string) $x->id)>{{ $x->product?->name }} / {{ $x->version }} / {{ $x->channel->value }} — {{ $x->runtime_manifest ? __('ui.protected_runtime') : __('ui.source_archive') }}</option>@endforeach</select></label>
+    <label>{{ __('ui.product') }}<select name="product_id" id="helperProduct" required>@foreach($products as $x)<option value="{{ $x->id }}" @selected((string) old('product_id', $products->firstWhere('slug', 'office')?->id) === (string) $x->id)>{{ $x->name }}</option>@endforeach</select></label>
+    <label>{{ __('ui.release') }}<select name="release_id" id="helperRelease"><option value="">{{ __('ui.existing_version_optional') }}</option>@foreach($releases as $x)<option value="{{ $x->id }}" data-product="{{ $x->product_id }}" data-ready="{{ $x->isOfficeUpdateReady() ? '1' : '0' }}" @selected((string) old('release_id') === (string) $x->id)>{{ $x->product?->name }} / {{ $x->version }} / {{ $x->channel->value }} — {{ $x->runtime_manifest ? __('ui.protected_runtime') : __('ui.source_archive') }}</option>@endforeach</select>@error('release_id')<small class="field-error">{{ $message }}</small>@enderror</label>
     <label>{{ __('ui.max_installations') }}<input name="max_installations" type="number" min="1" value="{{ old('max_installations', 1) }}" required></label>
-    <label>{{ __('ui.field_expires_at') }}<input name="expires_at" type="date" value="{{ old('expires_at') }}"></label>
+    <x-jalali-picker name="expires_at" :label="__('ui.field_expires_at')" :value="old('expires_at', '')"/>
     @include('admin.feature-plan', ['license' => null])
     <div class="form-actions"><button class="primary">{{ __('ui.generate') }}</button><a href="{{ route('licenses.index') }}">{{ __('ui.cancel') }}</a></div>
 </form>
@@ -32,11 +32,20 @@
 (() => {
     const mode = document.getElementById('helperMode');
     const options = document.getElementById('freshInstallOptions');
+    const product = document.getElementById('helperProduct');
+    const release = document.getElementById('helperRelease');
     const show = () => {
         options.hidden = mode.value !== 'installer_once';
         options.querySelectorAll('input').forEach(input => input.disabled = options.hidden);
+        release.required = !options.hidden;
+        Array.from(release.options).forEach(option => {
+            option.disabled = option.value === '' ? !options.hidden : option.dataset.product !== product.value || (!options.hidden && option.dataset.ready !== '1');
+            option.hidden = option.value !== '' && option.dataset.product !== product.value;
+        });
+        if (release.selectedOptions[0]?.disabled) release.value = Array.from(release.options).find(option => !option.disabled)?.value || '';
     };
     mode.addEventListener('change', show);
+    product.addEventListener('change', show);
     show();
 })();
 </script>

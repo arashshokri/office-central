@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Release;
 use App\Models\RepositoryIntegration;
 use App\Services\AuditService;
+use App\Services\OfficeReleaseReadiness;
 use App\Services\OfficeSourceService;
 use App\Services\PackageService;
 use Illuminate\Http\Client\ConnectionException;
@@ -165,6 +166,7 @@ class RepositoryIntegrationController extends Controller
             $existing = Release::withTrashed()->where('product_id', $integration->product_id)->where('version', $version)->where('channel', $integration->release_channel)->first();
             if ($existing) {
                 if (! $existing->trashed() && $existing->package_path && Storage::disk(config('office.package_disk'))->exists($existing->package_path)) {
+                    app(OfficeReleaseReadiness::class)->inspect($existing);
                     $integration->update(['last_sync_at' => now(), 'last_commit' => data_get($tag, 'commit.sha'), 'last_error' => null]);
 
                     return back()->with('success', __('ui.repository_already_synced'));

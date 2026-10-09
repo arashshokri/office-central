@@ -164,4 +164,37 @@ class OfficeSourceUpdateTest extends TestCase
         $this->artisan('office:index-source-releases')->assertSuccessful();
         $this->assertNull($bad->fresh()->source_manifest);
     }
+
+    public function test_fresh_license_accepts_existing_github_source_and_normalizes_public_url(): void
+    {
+        $product = $this->product();
+        $file = $this->source();
+        $body = file_get_contents($file->getRealPath());
+        Storage::disk('packages')->put('old-source.zip', $body);
+        $release = Release::create(['product_id' => $product->id, 'version' => '3.8.25', 'channel' => 'stable',
+            'status' => 'published', 'source_type' => 'github', 'package_path' => 'old-source.zip', 'package_sha256' => hash('sha256', $body)]);
+        $this->get(route('releases.show', $release))->assertOk()->assertSee(__('ui.ready_for_helper'))->assertDontSee(__('ui.not_ready_for_helper'));
+        $this->assertNotNull($release->fresh()->source_manifest);
+        $customer = Customer::create(['name' => 'New Office', 'status' => 'active']);
+        $this->post(route('licenses.store'), ['activation_mode' => 'installer_once', 'product_id' => $product->id,
+            'customer_id' => $customer->id, 'release_id' => $release->id, 'max_installations' => 1,
+            'deployment' => ['app_url' => 'http://office2.ponet.ir', 'admin_email' => 'admin@example.test', 'port' => 8082]])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        $license = License::firstOrFail();
+        $this->assertSame('https://office2.ponet.ir', $license->deployment_config['app_url']);
+        $this->assertSame(8082, $license->deployment_config['port']);
+        $this->assertSame('installer_once', $license->activation_mode);
+        $this->assertNull($license->consumed_at);
+    }
+
+    public function test_invalid_customer_url_returns_a_localized_error_and_creates_no_license(): void
+    {
+        $product = $this->product();
+        $customer = Customer::create(['name' => 'New Office', 'status' => 'active']);
+        $this->post(route('licenses.store'), ['activation_mode' => 'installer_once', 'product_id' => $product->id,
+            'customer_id' => $customer->id, 'max_installations' => 1,
+            'deployment' => ['app_url' => 'not a domain', 'admin_email' => 'admin@example.test']])
+            ->assertSessionHasErrors(['deployment.app_url' => __('ui.customer_url_invalid')]);
+        $this->assertDatabaseCount('licenses', 0);
+    }
 }

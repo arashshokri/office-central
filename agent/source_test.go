@@ -82,6 +82,76 @@ esac
 	return c, state, h, job
 }
 
+func TestFreshSourceInstallBuildsFullRuntimeAndConfirmsOnlyAfterHealth(t *testing.T) {
+	c, state, h, _ := sourceUpdateFixture(t)
+	state.Completed = false
+	state.Access = "provisioning"
+	state.Deployment = Deployment{URL: "https://office.customer.test", Email: "admin@example.test", Bind: "127.0.0.1", Port: 8082}
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$FIXTURE_LOG"
+case "$*" in
+ 'volume inspect leave-panel_db_data') if [ "$EXISTING_DATABASE" = 1 ]; then exit 0; else exit 1; fi;;
+ 'image inspect --format {{.Id}} '*) printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
+ 'run --rm --network none --entrypoint cat '*) printf '3.8.22';;
+ *'migrate php artisan office-agent:admin') cat >/dev/null;;
+ *'office-agent:health --expected-version='*) if [ "$FAIL_FRESH_HEALTH" = 1 ]; then exit 8; fi;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(c.Root, "bin/docker"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	args := os.Args
+	os.Args = []string{"office-agent", "daemon"}
+	t.Cleanup(func() { os.Args = args })
+	t.Setenv("EXISTING_DATABASE", "1")
+	if err := c.deploy(state, h, ""); err == nil || !strings.Contains(err.Error(), "existing customer database") {
+		t.Fatal("existing data was not protected", err)
+	}
+	if _, err := os.Stat(filepath.Join(c.Root, ".env")); !os.IsNotExist(err) {
+		t.Fatal("existing data environment replaced")
+	}
+	t.Setenv("EXISTING_DATABASE", "")
+	t.Setenv("FAIL_FRESH_HEALTH", "1")
+	if err := c.deploy(state, h, ""); err == nil {
+		t.Fatal("unhealthy installation confirmed")
+	}
+	if _, err := os.Stat(filepath.Join(c.Root, "agent/public/state.json")); !os.IsNotExist(err) {
+		t.Fatal("failed health saved completed state")
+	}
+	credentials, err := os.ReadFile(filepath.Join(c.Root, "initial-admin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAIL_FRESH_HEALTH", "")
+	if err := c.deploy(state, h, ""); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(c.Root, "initial-admin.json"))
+	if string(credentials) != string(after) {
+		t.Fatal("retry changed administrator credentials")
+	}
+	raw, _ := os.ReadFile(filepath.Join(c.Root, "compose.json"))
+	var compose map[string]any
+	if err := json.Unmarshal(raw, &compose); err != nil {
+		t.Fatal(err)
+	}
+	services := compose["services"].(map[string]any)
+	for _, name := range []string{"app", "db", "redis", "rdp-web", "rdp-guacd"} {
+		if services[name].(map[string]any)["image"] != "sha256:"+strings.Repeat("a", 64) {
+			t.Fatal("image was not pinned", name)
+		}
+	}
+	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
+	for _, ref := range []string{"mariadb:10.11.18", "redis:7.4.5-alpine", "guacamole/guacamole:1.6.0", "guacamole/guacd:1.6.0"} {
+		if !strings.Contains(string(commands), ref) {
+			t.Fatal("infrastructure missing", ref)
+		}
+	}
+	if strings.Contains(string(commands), "down -v") || strings.Contains(string(commands), "volume rm") {
+		t.Fatal("destructive database action")
+	}
+}
+
 func TestSourceUpdateBuildsBeforeMaintenanceAndKeepsCustomerDatabase(t *testing.T) {
 	c, state, h, job := sourceUpdateFixture(t)
 	if err := c.updateExisting(state, h, job, &ExistingOffice{Container: "office-web", Project: "leave-panel"}); err != nil {

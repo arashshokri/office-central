@@ -8,6 +8,7 @@ use App\Models\License;
 use App\Models\Product;
 use App\Models\Release;
 use App\Services\AuditService;
+use App\Services\OfficeReleaseReadiness;
 use App\Services\OfficeSourceService;
 use App\Services\PackageService;
 use Illuminate\Http\Request;
@@ -37,14 +38,21 @@ class ReleaseController extends Controller
                         'runtime' => $q->whereNotNull('runtime_manifest'),
                         'source' => $q->whereNull('runtime_manifest'),
                     };
-                })->latest()->paginate(20)->withQueryString(),
+                })->latest()->paginate(20)->withQueryString()->through(function ($release) {
+                    app(OfficeReleaseReadiness::class)->inspect($release);
+
+                    return $release;
+                }),
             'products' => Product::orderBy('name')->get(), 'searchScope' => 'releases',
         ]);
     }
 
     public function show(Release $release)
     {
-        return view('admin.release-show', ['release' => $release->load('product')]);
+        $release->load('product');
+        $readinessError = app(OfficeReleaseReadiness::class)->inspect($release);
+
+        return view('admin.release-show', compact('release', 'readinessError'));
     }
 
     private function form(?Release $release = null)

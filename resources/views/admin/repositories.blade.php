@@ -29,7 +29,7 @@
         @forelse($integrations as $integration)
             <article class="repository-card"><div class="repository-card-title"><strong>{{ $integration->product?->name }}</strong><span class="badge {{ $integration->enabled ? 'active' : 'inactive' }}">{{ $integration->enabled ? __('ui.enabled') : __('ui.disabled') }}</span></div>
                 <a class="repository-url" href="{{ $integration->repository_url }}" target="_blank" rel="noopener" dir="ltr">{{ preg_replace('~^https://github.com/~','',$integration->repository_url) }}</a>
-                <div class="repository-meta"><span>{{ __('ui.channel_'.$integration->release_channel) }}</span><span>{{ $integration->encrypted_access_token ? __('ui.repository_token_saved') : __('ui.repository_public_access') }}</span><span>{{ $integration->last_sync_at?->diffForHumans() ?? __('ui.never_synced') }}</span></div>
+                <div class="repository-meta"><span>{{ __('ui.channel_'.$integration->release_channel) }}</span><span>{{ $integration->encrypted_access_token ? __('ui.repository_token_saved') : __('ui.repository_public_access') }}</span><span>{{ $integration->last_sync_at ? \App\Support\PanelDate::format($integration->last_sync_at) : __('ui.never_synced') }}</span></div>
                 @if($integration->last_error)<p class="integration-error">{{ $integration->last_error }}</p>@endif
                 <div class="form-actions">
                     <form method="post" action="{{ route('repositories.test',$integration) }}">@csrf<button>{{ __('ui.test_connection') }}</button></form>

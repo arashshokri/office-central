@@ -390,10 +390,29 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 		return e
 	}
 	defer os.RemoveAll(stage)
-	if e = extractBundle(path, stage, s.Package.Manifest); e != nil {
+	if s.Package.Manifest.Format == "office-source-v1" {
+		if adopt != "" {
+			return errors.New("use connect for existing Office data; source installation is for a new server")
+		}
+		if _, err := output("docker", "volume", "inspect", "leave-panel_db_data"); err == nil {
+			if _, err = os.Stat(filepath.Join(c.Root, "compose.json")); err != nil {
+				return errors.New("existing customer database detected; use connect instead of a new source installation")
+			}
+		}
+		images, err := prepareSourceRuntime(path, stage, s.Package)
+		if err != nil {
+			return err
+		}
+		// Locally resolved image IDs are used only for Compose. The central
+		// receipt still confirms the original signed source ZIP and version.
+		s.Package.Manifest.Images = images
+	} else if e = extractBundle(path, stage, s.Package.Manifest); e != nil {
 		return e
 	}
 	for _, image := range s.Package.Manifest.Images {
+		if s.Package.Manifest.Format == "office-source-v1" {
+			continue
+		}
 		if e = run(nil, "docker", "load", "-i", filepath.Join(stage, image.Archive)); e != nil {
 			return e
 		}

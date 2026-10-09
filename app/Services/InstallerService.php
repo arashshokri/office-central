@@ -34,7 +34,10 @@ final class InstallerService
             $this->require($license->product->slug === 'office', 'INSTALLER_PRODUCT_INVALID', 'The Office helper requires the Office product.', 422);
             $this->require($license->product->status === 'active' && $license->customer->status === 'active', 'LICENSE_DISABLED', 'Customer or product is disabled.', 403);
             if ($license->activation_mode === 'installer_once') {
-                $this->require($license->release?->status->value === 'published' && is_array($license->release->runtime_manifest), 'RUNTIME_PACKAGE_REQUIRED', 'Assign an installation package for a new Office installation.', 409);
+                $this->require($license->release?->isOfficeUpdateReady() === true, 'INSTALL_PACKAGE_REQUIRED', 'Assign a published and validated Office installation package.', 409);
+                if ($license->release->source_manifest) {
+                    $this->require(version_compare($data['agent_version'] ?? '0', '1.4.0-rc.14', '>='), 'AGENT_UPGRADE_REQUIRED', 'Download the current installer before installing an Office source package.', 409);
+                }
             }
             if (! $origin) {
                 $this->require(($data['intent'] ?? 'install') === ($license->activation_mode === 'attach_once' ? 'connect' : 'install'),
@@ -110,9 +113,12 @@ final class InstallerService
             $installation = Installation::whereKey($installation->id)->lockForUpdate()->firstOrFail();
             $installation->load(['license.product', 'license.updateRelease', 'release', 'targetRelease']);
             $license = $installation->license;
-            $access = 'allowed'; $code = 'ACCESS_ALLOWED'; $message = null;
+            $access = 'allowed';
+            $code = 'ACCESS_ALLOWED';
+            $message = null;
             if (! hash_equals($installation->fingerprint, $presented)) {
-                $access = 'locked'; $code = 'LICENSE_HARDWARE_MISMATCH';
+                $access = 'locked';
+                $code = 'LICENSE_HARDWARE_MISMATCH';
                 $message = config('office.clone_lock_message');
                 // This decision belongs only to the presented hardware. Never
                 // mark the legitimate original installation locked.
@@ -122,17 +128,25 @@ final class InstallerService
                     'request_id' => 'v2-'.substr($presented, 0, 32),
                 ], ['license_id' => $license->id, 'ip_address' => request()->ip(), 'context' => ['presented_fingerprint' => $presented], 'occurred_at' => now()]);
             } elseif ($error = $this->licenses->validateInstallation($installation)) {
-                $access = 'locked'; [$code, $message] = $error;
+                $access = 'locked';
+                [$code, $message] = $error;
             } elseif ($license->temporarily_locked_at) {
-                $access = 'locked'; $code = 'TEMPORARY_LOCK'; $message = $license->temporary_lock_message ?: config('office.default_lock_message');
+                $access = 'locked';
+                $code = 'TEMPORARY_LOCK';
+                $message = $license->temporary_lock_message ?: config('office.default_lock_message');
             } elseif (! $installation->completed_at) {
-                $access = 'provisioning'; $code = 'INSTALLATION_PENDING'; $message = 'Installation is not confirmed yet.';
+                $access = 'provisioning';
+                $code = 'INSTALLATION_PENDING';
+                $message = 'Installation is not confirmed yet.';
             }
             $installation->agent_sequence++;
             // A cloned device must not overwrite the original's health/version.
             if (hash_equals($installation->fingerprint, $presented)) {
-                $installation->last_seen_at = now(); $installation->last_ip = request()->ip();
-                if ($agentVersion) { $installation->agent_version = $agentVersion; }
+                $installation->last_seen_at = now();
+                $installation->last_ip = request()->ip();
+                if ($agentVersion) {
+                    $installation->agent_version = $agentVersion;
+                }
             }
             $installation->last_state_synced_at = now();
             $installation->save();
@@ -219,11 +233,16 @@ final class InstallerService
 
     private function offeredUpdate(Installation $installation): ?Release
     {
-        if (! $installation->completed_at) { return null; }
+        if (! $installation->completed_at) {
+            return null;
+        }
         $release = $installation->targetRelease ?? $installation->license->updateRelease;
         if (! $release || ! $release->isOfficeUpdateReady()
             || $release->product_id !== $installation->product_id
-            || ! version_compare($release->version, $installation->application_version ?: '0.0.0', '>')) { return null; }
+            || ! version_compare($release->version, $installation->application_version ?: '0.0.0', '>')) {
+            return null;
+        }
+
         return $release;
     }
 
@@ -260,6 +279,8 @@ final class InstallerService
 
     private function require(bool $condition, string $code, string $message, int $status): void
     {
-        if (! $condition) { throw new InstallerException($code, $message, $status); }
+        if (! $condition) {
+            throw new InstallerException($code, $message, $status);
+        }
     }
 }
