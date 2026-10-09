@@ -13,10 +13,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const initial = window.officeUpdateInitial || {};
     const error = byId('updateError'), progress = byId('checkProgress');
     let currentVersion = root.dataset.installedVersion, offer = null, confirmation = null;
-    let running = false, checking = false, starting = false, reloadScheduled = false, pollTimer, progressTimer, percent = 0;
+    let running = false, checking = false, starting = false, cooling = false, reloadScheduled = false, pollTimer, progressTimer, cooldownTimer, percent = 0;
+    let jobId = null, installPercent = 0, pollFailures = 0;
     const modal = new bootstrap.Modal(byId('officeUpdateConfirm'));
     const buttons = () => {
-        check.disabled = running || checking || starting;
+        check.disabled = running || checking || starting || cooling;
         install.disabled = running || checking || starting || !offer?.version;
         byId('confirmInstall').disabled = running || starting;
     };
@@ -39,7 +40,15 @@ document.addEventListener('DOMContentLoaded', () => {
             let data;
             try { data = await response.json(); }
             catch { throw new Error('پاسخ سامانه قابل خواندن نیست؛ ممکن است نسخهٔ جدید در حال راه‌اندازی باشد.'); }
-            if (!response.ok) throw new Error(data.message || 'درخواست انجام نشد: HTTP ' + response.status);
+            if (!response.ok) {
+                // Older daemons wrapped Central's 429 in a 502 response.
+                if (/Too Many (Attempts|Requests)|HTTP 429/i.test(data.message || '')) {
+                    const limited = new Error('بررسی موقتاً محدود شده است؛ 60 ثانیه صبر کنید و دوباره تلاش کنید.');
+                    limited.retryAfter = 60;
+                    throw limited;
+                }
+                throw new Error(data.message || 'درخواست انجام نشد: HTTP ' + response.status);
+            }
             return data;
         } catch (e) {
             if (e.name === 'AbortError') throw new Error('زمان انتظار پایان یافت. اتصال سرویس را بررسی و دوباره تلاش کنید.');
@@ -52,6 +61,28 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('checkPercent').textContent = value + '%';
         byId('checkProgressBar').style.width = value + '%';
         byId('checkProgressTrack').setAttribute('aria-valuenow', String(value));
+    };
+    const setInstallPercent = (value, status = 'running') => {
+        // A server milestone may advance the bar; a timer can never finish it.
+        const number = Number(value);
+        installPercent = status === 'success' ? 100 : Math.max(installPercent, Math.min(99, Number.isFinite(number) ? number : 0));
+        byId('installPercent').textContent = installPercent + '%';
+        byId('installProgressBar').style.width = installPercent + '%';
+        byId('installProgressTrack').setAttribute('aria-valuenow', String(installPercent));
+        byId('installProgressBar').classList.remove('bg-danger', 'bg-success', 'progress-bar-striped', 'progress-bar-animated');
+        if (status === 'running') byId('installProgressBar').classList.add('progress-bar-striped', 'progress-bar-animated');
+        if (status === 'error') byId('installProgressBar').classList.add('bg-danger');
+        if (status === 'success') byId('installProgressBar').classList.add('bg-success');
+    };
+    const cooldown = seconds => {
+        cooling = true; buttons(); clearTimeout(cooldownTimer);
+        const tick = () => {
+            byId('checkMessage').textContent = 'بررسی بعدی تا ' + seconds + ' ثانیه دیگر…';
+            if (seconds <= 0) { cooling = false; buttons(); return; }
+            seconds -= 1;
+            cooldownTimer = setTimeout(tick, 1000);
+        };
+        tick();
     };
     const renderOffer = candidate => {
         offer = candidate?.available && candidate.version ? candidate : null;
@@ -66,10 +97,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const renderJob = job => {
         if (!job.status) return;
         const wasRunning = running;
+        if (job.id && job.id !== jobId) { jobId = job.id; installPercent = 0; }
         running = job.status === 'running';
+        const milestones = { queued: 0, authorization: 3, download: 8, build: 30, backup: 65, migration: 75, services: 85, health: 94, confirmation: 98 };
+        setInstallPercent(job.progress ?? milestones[job.stage] ?? 0, job.status);
         byId('updateProgress').hidden = false;
         byId('updateMessage').textContent = job.message || (running ? 'بروزرسانی در حال انجام است…' : 'وضعیت بروزرسانی');
-        byId('updateStage').textContent = 'مرحله: ' + (job.stage || '—') + (job.version ? ' • نسخهٔ ' + job.version : '');
+        const stages = { queued: 'آماده‌سازی', authorization: 'بررسی مجوز', download: 'دریافت بسته', build: 'ساخت و بررسی نسخه', backup: 'پشتیبان‌گیری', migration: 'اعمال تغییرات', services: 'راه‌اندازی', health: 'بررسی سلامت', confirmation: 'ثبت نتیجه', complete: 'تکمیل' };
+        byId('updateStage').textContent = 'مرحله: ' + (stages[job.stage] || job.stage || '—') + (job.version ? ' • نسخهٔ ' + job.version : '');
         byId('updateSpinner').hidden = !running;
         error.hidden = !job.error;
         if (job.error) error.textContent = job.error;
@@ -85,11 +120,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (running) pollTimer = setTimeout(poll, 2500);
     };
     const poll = async () => {
-        try { renderJob(await api(root.dataset.statusUrl)); }
+        try {
+            const job = await api(root.dataset.statusUrl);
+            if (!job.status) throw new Error('وضعیت عملیات هنوز در دسترس نیست؛ پیگیری ادامه دارد.');
+            pollFailures = 0; renderJob(job);
+        }
         catch (e) {
             byId('updateMessage').textContent = e.retryAfter ? 'پیگیری وضعیت پس از پایان زمان انتظار ادامه می‌یابد.' : 'در انتظار راه‌اندازی سرویس…';
             fail(e);
-            pollTimer = setTimeout(poll, e.retryAfter ? e.retryAfter * 1000 : 5000);
+            pollFailures += 1;
+            pollTimer = setTimeout(poll, e.retryAfter ? e.retryAfter * 1000 : Math.min(30000, 5000 * pollFailures));
         }
     };
     const waitBeforeCheckRetry = seconds => new Promise(resolve => {
@@ -102,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tick();
     });
     check.addEventListener('click', async () => {
-        if (checking || running || starting) return;
+        if (checking || running || starting || cooling) return;
         checking = true; buttons(); error.hidden = true; progress.hidden = false;
         byId('checkMessage').textContent = 'در حال بررسی نسخه‌های مجاز…';
         byId('checkProgressBar').classList.remove('bg-danger');
@@ -134,6 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
             byId('checkProgressBar').classList.add('bg-danger');
             byId('checkMessage').textContent = 'بررسی بروزرسانی انجام نشد.';
             fail(e);
+            if (e.retryAfter) cooldown(e.retryAfter);
         } finally { checking = false; buttons(); }
     });
     install.addEventListener('click', () => {
@@ -150,8 +191,16 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('updateSpinner').hidden = false;
         byId('updateMessage').textContent = 'در حال تأیید نسخه و آغاز بروزرسانی…';
         byId('updateStage').textContent = 'نسخهٔ تأییدشده: ' + confirmation.expected_version;
+        jobId = null; installPercent = 0; setInstallPercent(0);
         try { renderJob(await api(root.dataset.installUrl, 'POST', confirmation)); }
-        catch (e) { byId('updateSpinner').hidden = true; byId('updateMessage').textContent = 'آغاز بروزرسانی انجام نشد؛ وضعیت عملیات را دوباره بررسی کنید.'; fail(e); }
+        catch (e) {
+            byId('updateSpinner').hidden = true; setInstallPercent(0, 'error');
+            byId('updateMessage').textContent = 'پاسخ آغاز بروزرسانی دریافت نشد؛ وضعیت عملیات بررسی می‌شود.'; fail(e);
+            if (e.retryAfter) cooldown(e.retryAfter);
+            // A lost POST response may have started work. Read status once;
+            // never replay installation, backup or migrations automatically.
+            if (!e.retryAfter) pollTimer = setTimeout(poll, 2500);
+        }
         finally { starting = false; buttons(); }
     });
     byId('officeUpdateConfirm').addEventListener('hidden.bs.modal', () => { if (!starting) confirmation = null; });

@@ -47,7 +47,11 @@
             <div class="office-install-action"><button class="btn btn-primary btn-sm" type="button" id="installUpdate" disabled><i class="fa-solid fa-download ms-1"></i>بروزرسانی سامانه</button><span id="versionComparison" class="small" hidden>نسخهٔ فعلی: <bdi id="currentVersion">v{{ $installedVersion }}</bdi><i class="fa-solid fa-arrow-left mx-2" aria-hidden="true"></i>نسخهٔ جدید: <bdi id="offeredVersion"></bdi></span></div>
         </div>
         <div class="office-update-progress mt-3" id="checkProgress" role="status" aria-live="polite" hidden><div class="d-flex justify-content-between gap-3 mb-2"><span id="checkMessage">در حال بررسی بروزرسانی…</span><bdi id="checkPercent">0%</bdi></div><div class="progress" role="progressbar" aria-label="پیشرفت بررسی بروزرسانی" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="checkProgressTrack"><div class="progress-bar" id="checkProgressBar" style="width:0%"></div></div></div>
-        <div class="office-update-progress mt-3" id="updateProgress" role="status" aria-live="polite" hidden><span class="spinner-border spinner-border-sm" id="updateSpinner" aria-hidden="true"></span><strong id="updateMessage"></strong><small id="updateStage" class="text-body-secondary"></small></div>
+        <div class="office-update-progress mt-3" id="updateProgress" role="status" aria-live="polite" hidden>
+            <div class="d-flex align-items-center justify-content-between gap-3 mb-2"><div><span class="spinner-border spinner-border-sm" id="updateSpinner" aria-hidden="true"></span> <strong id="updateMessage"></strong></div><bdi id="installPercent">0%</bdi></div>
+            <div class="progress" role="progressbar" aria-label="پیشرفت نصب بروزرسانی" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="installProgressTrack"><div class="progress-bar" id="installProgressBar" style="width:0%"></div></div>
+            <small id="updateStage" class="text-body-secondary"></small><small class="text-body-secondary">پیشرفت بر اساس مراحل نصب است؛ هنگام ساخت نسخه ممکن است مدتی ثابت بماند. ۱۰۰٪ یعنی نصب و بررسی سلامت با موفقیت تمام شده است.</small>
+        </div>
         <pre class="alert alert-danger small mt-3 mb-0" id="updateError" role="alert" hidden></pre>
         @endunless
     </div></section>

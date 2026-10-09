@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,25 @@ import (
 	"testing"
 	"time"
 )
+
+func TestUpstreamThrottleIsTypedEvenWhenProxyReturnsHTML(t *testing.T) {
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(429)
+		w.Write([]byte("<html>Too Many Requests</html>"))
+	}))
+	defer server.Close()
+	c := &Client{HTTP: server.Client(), Identity: Identity{Endpoint: server.URL, Key: b64.EncodeToString(key)}}
+	err := c.post("state", map[string]string{}, &State{})
+	var limited *RateLimitError
+	if !errors.As(err, &limited) || limited.Seconds != 7 || strings.Contains(err.Error(), "Too Many") {
+		t.Fatal(err)
+	}
+	if retrySeconds("invalid") != 60 || retrySeconds("9000") != 3600 {
+		t.Fatal("bad retry bounds")
+	}
+}
 
 func TestConcurrentSetupPinsOnlyOneDeviceIdentity(t *testing.T) {
 	public, _, _ := ed25519.GenerateKey(rand.Reader)

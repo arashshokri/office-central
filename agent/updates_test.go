@@ -13,7 +13,48 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
+
+func TestProgressMilestonesAreMonotonicAndNeverFinishBeforeReceipt(t *testing.T) {
+	c := &Client{Root: t.TempDir()}
+	job := &UpdateJob{Status: "running"}
+	previous := 0
+	for _, stage := range []string{"authorization", "download", "build", "backup", "migration", "services", "health", "confirmation"} {
+		if err := c.updateStage(job, stage, "fixture", false); err != nil {
+			t.Fatal(err)
+		}
+		if job.Progress < previous || job.Progress >= 100 || c.updateJob().Progress != job.Progress {
+			t.Fatal(job)
+		}
+		previous = job.Progress
+	}
+	c.updateStage(job, "download", "retry", false)
+	if job.Progress != previous {
+		t.Fatal("progress moved backwards")
+	}
+}
+
+func TestReadOnlyUpdateChecksReuseARecentDeviceBoundResult(t *testing.T) {
+	h := Hardware{"20b612fc-d40b-43aa-a660-00ff0202dd10", "00112233445566778899aabbccddeeff"}
+	fp, _ := h.fingerprint()
+	c := &Client{Root: t.TempDir(), CheckedAt: time.Now(), CheckedFingerprint: fp,
+		CheckedUpdate: map[string]any{"confirmation_supported": true, "installed_version": "3.8.25"}}
+	for i := 0; i < 20; i++ {
+		if cached := c.cachedUpdate(h); cached == nil || cached["installed_version"] != "3.8.25" {
+			t.Fatal("valid repeated check was not coalesced")
+		}
+	}
+	other := h
+	other.Machine = strings.Repeat("b", 32)
+	if c.cachedUpdate(other) != nil {
+		t.Fatal("cache crossed a hardware identity")
+	}
+	c.CheckedAt = time.Now().Add(-11 * time.Second)
+	if c.cachedUpdate(h) != nil {
+		t.Fatal("stale authorization reused")
+	}
+}
 
 func TestUpdateConfirmationPinsVersionAndRelease(t *testing.T) {
 	state := State{Package: Package{Version: "3.8.23", Release: "release-a"}}
@@ -219,7 +260,7 @@ func TestPendingConfirmationDoesNotRepeatMigrationOrBackup(t *testing.T) {
 			t.Fatal("repeated an already completed deployment", string(commands))
 		}
 	}
-	if job.Status != "success" || job.Maintenance {
+	if job.Status != "success" || job.Maintenance || job.Progress != 100 {
 		t.Fatal("completion not recovered", job)
 	}
 }
@@ -232,6 +273,9 @@ func TestPendingConfirmationRejectsDifferentApprovedVersionWithoutTouchingData(t
 	err := c.performUpdate(job, h, UpdateConfirmation{Version: "3.8.23"})
 	if err == nil || !strings.Contains(err.Error(), "UPDATE_OFFER_CHANGED") {
 		t.Fatal(err)
+	}
+	if job.Progress == 100 || job.Status != "error" {
+		t.Fatal("failure reported completion", job)
 	}
 	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
 	if len(commands) != 0 {

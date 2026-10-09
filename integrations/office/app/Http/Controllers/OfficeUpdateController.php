@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\OfficeHelperRequestException;
 use App\Services\OfficeLicense;
 use Illuminate\Http\Request;
 
@@ -27,7 +28,7 @@ final class OfficeUpdateController extends Controller
         try {
             return response()->json($license->checkUpdates())->header('Cache-Control', 'no-store, private');
         } catch (\RuntimeException $error) {
-            return response()->json(['message' => $error->getMessage()], 502);
+            return $this->helperError($error);
         }
     }
 
@@ -38,7 +39,7 @@ final class OfficeUpdateController extends Controller
         try {
             return response()->json($license->startUpdate($data), 202);
         } catch (\RuntimeException $error) {
-            return response()->json(['message' => $error->getMessage()], 502);
+            return $this->helperError($error);
         }
     }
 
@@ -47,5 +48,15 @@ final class OfficeUpdateController extends Controller
         $this->authorizeAdmin($request);
 
         return response()->json($license->updateStatus())->header('Cache-Control', 'no-store, private');
+    }
+
+    private function helperError(\RuntimeException $error)
+    {
+        if ($error instanceof OfficeHelperRequestException) {
+            return response()->json(['message' => $error->getMessage(), 'retry_after' => $error->retryAfter], 429)
+                ->withHeaders(['Retry-After' => $error->retryAfter, 'Cache-Control' => 'no-store, private']);
+        }
+
+        return response()->json(['message' => $error->getMessage()], 502)->header('Cache-Control', 'no-store, private');
     }
 }

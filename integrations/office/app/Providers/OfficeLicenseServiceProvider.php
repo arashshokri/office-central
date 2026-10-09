@@ -24,8 +24,8 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
     {
         // Numeric throttle middleware shares a user counter across routes.
         // Status polling must never consume check, install or activation quotas.
-        foreach (['office-update-check' => 6, 'office-update-install' => 3,
-            'office-update-status' => 60, 'office-license-reactivate' => 6] as $name => $attempts) {
+        foreach (['office-update-check' => 30, 'office-update-install' => 3,
+            'office-update-status' => 120, 'office-license-reactivate' => 6] as $name => $attempts) {
             RateLimiter::for($name, fn (Request $request) => Limit::perMinute($attempts)
                 ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()))
                 ->response(function (Request $request, array $headers) {

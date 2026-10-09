@@ -89,8 +89,12 @@ test('repeated throttling stops after one retry and displays a useful Persian er
     assert.match(page.element('updateError').textContent, /60/);
     assert.doesNotMatch(page.element('updateError').textContent, /Too Many Attempts/);
     assert.notEqual(page.element('checkPercent').textContent, '100%');
+    assert.equal(page.element('checkUpdate').disabled, true);
+    await page.click('checkUpdate');
+    assert.equal(page.calls.length, 2);
     await page.advance(60000);
     assert.equal(page.calls.length, 2);
+    assert.equal(page.element('checkUpdate').disabled, false);
 });
 
 test('status polling respects Retry-After and resumes at the server deadline', async () => {
@@ -111,4 +115,41 @@ test('a throttled install is never automatically replayed', async () => {
     assert.match(page.element('updateError').textContent, /10/);
     await page.advance(60000);
     assert.deepEqual(page.calls, [{ url: '/install', method: 'POST' }]);
+});
+
+test('installation progress uses milestones, survives reload and reaches 100 only on success', async () => {
+    const page = ui([reply(200, { id: 'job-a', status: 'running', stage: 'health', progress: 94 }),
+        reply(200, { id: 'job-a', status: 'running', stage: 'confirmation', progress: 98 }),
+        reply(200, { id: 'job-a', status: 'success', stage: 'complete', progress: 100 })],
+        { job: { id: 'job-a', status: 'running', stage: 'build', progress: 30 } });
+    assert.equal(page.element('installPercent').textContent, '30%');
+    await page.advance(2500);
+    assert.equal(page.element('installPercent').textContent, '94%');
+    await page.advance(2500);
+    assert.equal(page.element('installPercent').textContent, '98%');
+    await page.advance(2500);
+    assert.equal(page.element('installPercent').textContent, '100%');
+    assert.equal(page.element('installProgressBar').style.width, '100%');
+    assert.equal(page.element('installUpdate').disabled, true);
+});
+
+test('old helper milestones and failed installations never claim completion', async () => {
+    const page = ui([reply(200, { id: 'job-a', status: 'error', stage: 'migration', progress: 100, error: 'SQLSTATE' })],
+        { job: { id: 'job-a', status: 'running', stage: 'build' } });
+    assert.equal(page.element('installPercent').textContent, '30%');
+    await page.advance(2500);
+    assert.equal(page.element('installPercent').textContent, '99%');
+    assert.equal(page.element('updateError').textContent, 'SQLSTATE');
+});
+
+test('a lost install response is followed by status reads, never a second install POST', async () => {
+    const page = ui([reply(502, { message: 'Restarting' }), reply(200, { id: 'job-a', status: 'running', stage: 'build', progress: 30 })],
+        { offer: available.update });
+    page.click('installUpdate');
+    await page.click('confirmInstall');
+    assert.equal(page.element('installPercent').textContent, '0%');
+    await page.advance(2500);
+    assert.deepEqual(page.calls.map(c => c.method), ['POST', 'GET']);
+    assert.equal(page.element('installPercent').textContent, '30%');
+    assert.equal(page.element('checkUpdate').disabled, true);
 });

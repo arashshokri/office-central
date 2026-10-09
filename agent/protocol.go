@@ -16,12 +16,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-const version = "1.4.0-rc.16"
+const version = "1.4.0-rc.17"
 const contextPrefix = "office-agent/v2\n"
 
 var b64 = base64.RawURLEncoding
@@ -105,6 +106,32 @@ type Client struct {
 	Root     string
 	Identity Identity
 	HTTP     *http.Client
+	// Accessed only under the daemon's operation mutex.
+	CheckedUpdate      map[string]any
+	CheckedAt          time.Time
+	CheckedFingerprint string
+}
+
+type RateLimitError struct{ Seconds int }
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("بررسی موقتاً محدود شده است؛ %d ثانیه صبر کنید و دوباره تلاش کنید.", e.Seconds)
+}
+
+func retrySeconds(header string) int {
+	seconds, err := strconv.Atoi(header)
+	if err != nil {
+		if deadline, e := http.ParseTime(header); e == nil {
+			seconds = int(time.Until(deadline).Seconds()) + 1
+		}
+	}
+	if seconds < 1 {
+		return 60
+	}
+	if seconds > 3600 {
+		return 3600
+	}
+	return seconds
 }
 
 func randomHex(n int) string {
@@ -288,11 +315,15 @@ func (c *Client) post(action string, data any, out any) error {
 		return e
 	}
 	defer res.Body.Close()
+	// Parse throttling before JSON: a reverse proxy may send an HTML body.
 	var response struct {
 		Success bool            `json:"success"`
 		Data    json.RawMessage `json:"data"`
 		Code    string          `json:"code"`
 		Message string          `json:"message"`
+	}
+	if res.StatusCode == http.StatusTooManyRequests {
+		return &RateLimitError{Seconds: retrySeconds(res.Header.Get("Retry-After"))}
 	}
 	if e = json.NewDecoder(io.LimitReader(res.Body, 1024*1024)).Decode(&response); e != nil {
 		return fmt.Errorf("invalid API response (HTTP %d)", res.StatusCode)

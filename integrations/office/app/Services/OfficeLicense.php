@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Exceptions\OfficeHelperRequestException;
+
 final class OfficeLicense
 {
     public function enabled(): bool
@@ -144,6 +146,10 @@ final class OfficeLicense
             $body = explode("\r\n\r\n", $response, 2)[1] ?? '';
             $data = json_decode($body, true);
             if (! in_array((int) ($status[1] ?? 0), [200, 202], true)) {
+                if (($status[1] ?? '') === '429') {
+                    $seconds = max(1, min(3600, (int) ($data['retry_after'] ?? 60)));
+                    throw new OfficeHelperRequestException("بررسی موقتاً محدود شده است؛ {$seconds} ثانیه صبر کنید و دوباره تلاش کنید.", $seconds);
+                }
                 if (($status[1] ?? '') === '404') {
                     throw new \RuntimeException('HELPER_UPGRADE_REQUIRED: نسخهٔ helper قدیمی است؛ مدیر سرور فرمان نصب و اتصال helper را دوباره اجرا کند.');
                 }

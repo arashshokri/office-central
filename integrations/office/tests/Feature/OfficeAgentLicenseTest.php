@@ -56,6 +56,11 @@ while($connection=stream_socket_accept($server,10)){
         $sig=sodium_crypto_sign_detached("office-hardware-proof/v2\n".$data['Nonce']."\n".$fp,file_get_contents($dir.'/device.key'));
         $result=['fingerprint'=>$fp,'signature'=>sodium_bin2base64($sig,SODIUM_BASE64_VARIANT_URLSAFE_NO_PADDING)];
     } elseif($path[1]==='/check-update') {
+        if(file_exists($dir.'/limited')) {
+            $out=json_encode(['message'=>'Too Many Attempts.','retry_after'=>7]);
+            fwrite($connection,"HTTP/1.1 429 Too Many Requests\r\nContent-Length: ".strlen($out)."\r\nRetry-After: 7\r\nConnection: close\r\n\r\n".$out);
+            fclose($connection);continue;
+        }
         $result=['confirmation_supported'=>!file_exists($dir.'/old-helper'),'installed_version'=>'3.8.22',
             'update'=>['available'=>true,'version'=>'3.8.23','release_id'=>'b80a7eb6-8d49-4f42-b3ed-16e3a916b57e']];
     } else {$result=['status'=>'running','version'=>'3.8.23'];}
@@ -209,7 +214,7 @@ PHP;
     {
         $user = User::factory()->make(['id' => 82, 'role' => 'admin', 'is_active' => true]);
         $this->actingAs($user);
-        for ($i = 0; $i < 6; $i++) {
+        for ($i = 0; $i < 30; $i++) {
             $this->postJson('/settings/system-update/check')->assertOk();
         }
         $response = $this->postJson('/settings/system-update/check')->assertStatus(429)->assertHeader('Retry-After');
@@ -221,6 +226,16 @@ PHP;
         $this->actingAs($other)->postJson('/settings/system-update/check')->assertOk();
         $this->travel(61)->seconds();
         $this->actingAs($user)->postJson('/settings/system-update/check')->assertOk();
+    }
+
+    public function test_central_throttle_retains_status_and_retry_deadline_in_office(): void
+    {
+        file_put_contents($this->dir.'/limited', '1');
+        $user = User::factory()->make(['id' => 84, 'role' => 'admin', 'is_active' => true]);
+        $this->actingAs($user)->postJson('/settings/system-update/check')->assertStatus(429)
+            ->assertHeader('Retry-After', '7')->assertJsonPath('retry_after', 7)
+            ->assertDontSee('Too Many Attempts');
+        $this->getJson('/settings/system-update/status')->assertOk();
     }
 
     public function test_settings_tile_is_visible_only_to_the_two_administrator_roles(): void

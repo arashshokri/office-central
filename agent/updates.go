@@ -18,6 +18,7 @@ import (
 type UpdateJob struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
+	Progress    int    `json:"progress"`
 	Stage       string `json:"stage"`
 	Version     string `json:"version"`
 	Message     string `json:"message"`
@@ -39,6 +40,12 @@ func (c *Client) saveJob(job UpdateJob) error {
 	return atomicJSON(filepath.Join(c.Root, "agent/public/update.json"), job, 0644)
 }
 func (c *Client) updateStage(job *UpdateJob, stage, message string, maintenance bool) error {
+	// Completed-work milestones, never an estimate of elapsed build time.
+	progress := map[string]int{"queued": 0, "authorization": 3, "download": 8, "build": 30,
+		"backup": 65, "migration": 75, "services": 85, "health": 94, "confirmation": 98}[stage]
+	if progress > job.Progress {
+		job.Progress = progress
+	}
 	job.Stage = stage
 	job.Message = message
 	job.Maintenance = maintenance
@@ -168,6 +175,7 @@ func (c *Client) performUpdate(job *UpdateJob, h Hardware, confirmation UpdateCo
 			job.Message = "بروزرسانی در مرحلهٔ «" + job.Stage + "» متوقف شد."
 		} else {
 			job.Status = "success"
+			job.Progress = 100
 			job.Stage = "complete"
 			job.Message = "بروزرسانی با موفقیت نصب و در مرکز ثبت شد."
 			job.Maintenance = false
@@ -240,6 +248,15 @@ type UpdateConfirmation struct {
 	Release string `json:"expected_release_id"`
 }
 
+func (c *Client) cachedUpdate(h Hardware) map[string]any {
+	fingerprint, err := h.fingerprint()
+	age := time.Since(c.CheckedAt)
+	if err != nil || c.CheckedFingerprint != fingerprint || age < 0 || age >= 10*time.Second {
+		return nil
+	}
+	return c.CheckedUpdate
+}
+
 func (confirmation UpdateConfirmation) matches(state State) bool {
 	return (confirmation.Version == "" || confirmation.Version == state.Package.Version) &&
 		(confirmation.Release == "" || confirmation.Release == state.Package.Release)
@@ -272,15 +289,34 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 		writeControlJSON(w, 422, map[string]string{"message": safeUpdateError(err)})
 		return true
 	}
+	// Coalesce repeated read-only checks across tabs/users for ten seconds.
+	// Installation always revalidates authorization without using this cache.
+	fingerprint, _ := h.fingerprint()
+	if r.URL.Path == "/check-update" {
+		if cached := c.cachedUpdate(h); cached != nil {
+			mu.Unlock()
+			writeControlJSON(w, 200, cached)
+			return true
+		}
+	}
 	state, installed, err := c.checkUpdate(h)
 	if err != nil {
 		mu.Unlock()
-		writeControlJSON(w, 502, map[string]string{"message": safeUpdateError(err)})
+		var limited *RateLimitError
+		if errors.As(err, &limited) {
+			w.Header().Set("Retry-After", strconv.Itoa(limited.Seconds))
+			writeControlJSON(w, 429, map[string]any{"message": limited.Error(), "retry_after": limited.Seconds})
+		} else {
+			writeControlJSON(w, 502, map[string]string{"message": safeUpdateError(err)})
+		}
 		return true
 	}
 	if r.URL.Path == "/check-update" {
+		c.CheckedUpdate = map[string]any{"update": state.Update, "installed_version": installed, "confirmation_supported": true, "checked_at": time.Now().UTC().Format(time.RFC3339)}
+		c.CheckedAt, c.CheckedFingerprint = time.Now(), fingerprint
+		cached := c.CheckedUpdate
 		mu.Unlock()
-		writeControlJSON(w, 200, map[string]any{"update": state.Update, "installed_version": installed, "confirmation_supported": true, "checked_at": time.Now().UTC().Format(time.RFC3339)})
+		writeControlJSON(w, 200, cached)
 		return true
 	}
 	if !confirmation.matches(state) {
@@ -301,6 +337,7 @@ func (c *Client) handleUpdates(w http.ResponseWriter, r *http.Request, mu *sync.
 		return true
 	}
 	job := UpdateJob{ID: randomHex(16), Status: "running", Stage: "queued", Version: state.Package.Version, Maintenance: old.Maintenance, Message: "بروزرسانی در صف اجراست…", StartedAt: time.Now().UTC().Format(time.RFC3339)}
+	c.CheckedUpdate = nil
 	if err = c.saveJob(job); err != nil {
 		mu.Unlock()
 		writeControlJSON(w, 500, map[string]string{"message": safeUpdateError(err)})

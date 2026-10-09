@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-rc.17 — 2026-10-09
+
+- Publish Office v3.8.26 with themed installation progress based on completed stages. Report 100% only after application health and Central's completion receipt succeed; retain progress and actionable errors across reloads.
+- Coalesce successful read-only helper checks for ten seconds per hardware identity, without caching installation authorization. Increase Office's separate check/status quotas while retaining installation limits.
+- Preserve upstream 429 and Retry-After through the helper and Office controller, including proxy HTML responses. Apply a visible browser cooldown and bounded polling backoff; recover lost installation responses by reading status without replaying installation.
+- Cover milestone persistence, completion failures, throttling propagation, independent quotas, cooldown, legacy helper progress and response-loss recovery with regression tests.
+
 ## 1.4.0-rc.16 — 2026-10-09
 
 - Creating a product with the slug of a soft-deleted product restores that product with the submitted details and preserves its numeric ID, UUID and audit history. Deleted releases and revoked licenses are not restored.
