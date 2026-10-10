@@ -115,8 +115,9 @@ func extractOfficeSource(path, target string, m Manifest) error {
 }
 
 type SourceBuildOptions struct {
-	LogPath string
-	Report  BuildReport
+	LogPath         string
+	DockerConfigDir string
+	Report          BuildReport
 }
 
 func buildSourceImage(path, stage string, p Package, options ...SourceBuildOptions) (string, error) {
@@ -133,7 +134,7 @@ func buildSourceImage(path, stage string, p Package, options ...SourceBuildOptio
 	if len(options) > 0 {
 		settings = options[0]
 	}
-	if err := buildOfficeImage(stage, image, p.Version, settings.LogPath, settings.Report); err != nil {
+	if err := buildOfficeImage(stage, image, p.Version, settings.LogPath, settings.DockerConfigDir, settings.Report); err != nil {
 		return "", fmt.Errorf("ساخت بستهٔ Office ناموفق بود: %w", err)
 	}
 	raw, err := output("docker", "image", "inspect", "--format", "{{.Id}}", image)

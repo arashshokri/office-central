@@ -399,7 +399,7 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 				return errors.New("existing customer database detected; use connect instead of a new source installation")
 			}
 		}
-		images, err := prepareSourceRuntime(path, stage, s.Package, SourceBuildOptions{LogPath: filepath.Join(c.Root, "agent/private", "build-"+s.Package.SHA[:24]+".log")})
+		images, err := prepareSourceRuntime(path, stage, s.Package, SourceBuildOptions{LogPath: filepath.Join(c.Root, "agent/private", "build-"+s.Package.SHA[:24]+".log"), DockerConfigDir: filepath.Join(c.Root, "agent/private/docker")})
 		if err != nil {
 			return err
 		}
@@ -497,6 +497,10 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 	return nil
 }
 func (c *Client) installService(start bool) error {
+	dockerConfig := filepath.Join(c.Root, "agent/private/docker")
+	if _, e := dockerBuildEnvironment(dockerConfig); e != nil {
+		return e
+	}
 	exe, e := os.Executable()
 	if e != nil {
 		return e
@@ -508,7 +512,7 @@ func (c *Client) installService(start bool) error {
 	if e = atomicWrite("/usr/local/bin/office-agent", raw, 0755); e != nil {
 		return e
 	}
-	unit := "[Unit]\nDescription=Office licensing helper\nAfter=network-online.target docker.service\nWants=network-online.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/office-agent daemon --root " + c.Root + "\nRestart=always\nRestartSec=5\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=full\nProtectHome=true\n[Install]\nWantedBy=multi-user.target\n"
+	unit := officeServiceUnit(c.Root)
 	if e = atomicWrite("/etc/systemd/system/office-agent.service", []byte(unit), 0644); e != nil {
 		return e
 	}
@@ -519,6 +523,10 @@ func (c *Client) installService(start bool) error {
 		return run(nil, "systemctl", "enable", "--now", "office-agent.service")
 	}
 	return run(nil, "systemctl", "enable", "office-agent.service")
+}
+func officeServiceUnit(root string) string {
+	dockerConfig := filepath.Join(root, "agent/private/docker")
+	return "[Unit]\nDescription=Office licensing helper\nAfter=network-online.target docker.service\nWants=network-online.target\n[Service]\nType=simple\nExecStart=/usr/local/bin/office-agent daemon --root " + root + "\nEnvironment=DOCKER_CONFIG=" + dockerConfig + "\nEnvironment=BUILDX_CONFIG=" + filepath.Join(dockerConfig, "buildx") + "\nRestart=always\nRestartSec=5\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=full\nProtectHome=true\n[Install]\nWantedBy=multi-user.target\n"
 }
 func ensureDocker() error {
 	if _, e := output("docker", "compose", "version"); e == nil {

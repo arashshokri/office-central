@@ -69,8 +69,12 @@ func sourceUpdateFixture(t *testing.T) (*Client, State, Hardware, *UpdateJob) {
 	}
 	script := `#!/bin/sh
 case "$*" in
- 'buildx version') if [ "$NO_BUILDX" = 1 ]; then exit 1; fi;;
- 'buildx build '*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; if [ "$FAIL_SOURCE_BUILD" = 1 ]; then echo 'registry unavailable'; exit 1; fi;;
+ 'buildx version')
+   test "$DOCKER_CONFIG" = "$FIXTURE_DOCKER_CONFIG" && test "$BUILDX_CONFIG" = "$DOCKER_CONFIG/buildx" || { echo 'wrong Docker config'; exit 1; }
+   if [ "$NO_BUILDX" = 1 ]; then exit 1; fi;;
+ 'buildx build '*)
+   test "$DOCKER_CONFIG" = "$FIXTURE_DOCKER_CONFIG" && test "$BUILDX_CONFIG" = "$DOCKER_CONFIG/buildx" || { echo 'wrong Docker config'; exit 1; }
+   printf '%s\n' "$*" >> "$FIXTURE_LOG"; if [ "$FAIL_SOURCE_BUILD" = 1 ]; then echo 'registry unavailable'; exit 1; fi;;
  'image inspect --format {{.Id}} office-source:'*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
  'run --rm --network none --entrypoint cat '*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; printf '3.8.22';;
  'run --rm --network none --entrypoint php '*) printf '%s\n' "$*" >> "$FIXTURE_LOG";;
@@ -80,6 +84,7 @@ esac
 	if err = os.WriteFile(filepath.Join(c.Root, "bin/docker"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("FIXTURE_DOCKER_CONFIG", filepath.Join(c.Root, "agent/private/docker"))
 	return c, state, h, job
 }
 
@@ -91,6 +96,8 @@ func TestFreshSourceInstallBuildsFullRuntimeAndConfirmsOnlyAfterHealth(t *testin
 	script := `#!/bin/sh
 printf '%s\n' "$*" >> "$FIXTURE_LOG"
 case "$*" in
+ 'buildx version'|'buildx build '*)
+   test "$DOCKER_CONFIG" = "$FIXTURE_DOCKER_CONFIG" && test "$BUILDX_CONFIG" = "$DOCKER_CONFIG/buildx" || { echo 'wrong Docker config'; exit 1; };;
  'volume inspect leave-panel_db_data') if [ "$EXISTING_DATABASE" = 1 ]; then exit 0; else exit 1; fi;;
  'image inspect --format {{.Id}} '*) printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
  'run --rm --network none --entrypoint cat '*) printf '3.8.22';;

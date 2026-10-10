@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0-rc.19 — 2026-10-10
+
+- Publish Office v3.8.28 with private Docker and Buildx client state under the helper root. Override both configuration paths for source-build preflight and the actual build process, independently of shell or old service defaults.
+- Set private client paths in the installed systemd unit while retaining ProtectHome, ProtectSystem, NoNewPrivileges and the private umask. Probe writable configuration directories before building, enforce private permissions and preserve existing registry authentication.
+- Cover both fresh and existing source builds and service-root paths with regression tests. Add a real Docker/systemd sandbox test that reproduces the old protected-home failure and then builds and verifies a scratch image without registry access.
+
 ## 1.4.0-rc.18 — 2026-10-09
 
 - Publish Office v3.8.27 with Buildx/BuildKit source builds targeting the managed image. Avoid legacy builder execution of independent protected-image stages, require Buildx before compilation and load the verified image into the local Docker engine.

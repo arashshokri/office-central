@@ -46,6 +46,8 @@ jobs:
           go-version: 'stable'
           cache: false
       - run: cd agent && go vet ./... && go test -race ./...
+      - name: Build under the helper's actual systemd filesystem protections
+        run: sudo env "PATH=$PATH" bash tests/Deployment/build_sandbox_test.sh
       - run: bash scripts/build-agent.sh
       - uses: actions/upload-artifact@v4
         with:

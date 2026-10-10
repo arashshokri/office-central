@@ -507,7 +507,7 @@ func (c *Client) updateExisting(state State, h Hardware, job *UpdateJob, profile
 			return err
 		}
 		logPath := filepath.Join(c.Root, "agent/private", "build-"+state.Package.SHA[:24]+".log")
-		image, err = buildSourceImage(path, stage, state.Package, SourceBuildOptions{LogPath: logPath, Report: func(progress int, step string) {
+		image, err = buildSourceImage(path, stage, state.Package, SourceBuildOptions{LogPath: logPath, DockerConfigDir: filepath.Join(c.Root, "agent/private/docker"), Report: func(progress int, step string) {
 			if progress > job.Progress {
 				job.Progress = progress
 			}

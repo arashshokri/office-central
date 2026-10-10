@@ -146,10 +146,49 @@ func executeBuild(command *exec.Cmd, output *buildOutput, total, idle time.Durat
 	return nil
 }
 
-func buildOfficeImage(stage, image, version, logPath string, report BuildReport) error {
+// Buildx writes client state even with the local default builder. The service
+// intentionally hides /root, so keep this state outside HOME and the source
+// build context. Existing private config/auth files are never overwritten.
+func dockerBuildEnvironment(configDir string) ([]string, error) {
+	if !filepath.IsAbs(configDir) {
+		return nil, errors.New("BUILD_CONFIG: مسیر خصوصی تنظیمات Docker باید مطلق باشد")
+	}
+	buildxDir := filepath.Join(configDir, "buildx")
+	for _, dir := range []string{configDir, buildxDir} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, fmt.Errorf("BUILD_CONFIG: آماده‌سازی مسیر خصوصی Docker ناموفق بود: %w", err)
+		}
+		if err := os.Chmod(dir, 0700); err != nil {
+			return nil, fmt.Errorf("BUILD_CONFIG: تنظیم دسترسی مسیر خصوصی Docker ناموفق بود: %w", err)
+		}
+		probe, err := os.CreateTemp(dir, ".write-check-")
+		if err != nil {
+			return nil, fmt.Errorf("BUILD_CONFIG: مسیر خصوصی Docker قابل نوشتن نیست: %w", err)
+		}
+		probe.Close()
+		if err := os.Remove(probe.Name()); err != nil {
+			return nil, err
+		}
+	}
+	env := make([]string, 0, len(os.Environ())+2)
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "DOCKER_CONFIG=") && !strings.HasPrefix(value, "BUILDX_CONFIG=") {
+			env = append(env, value)
+		}
+	}
+	return append(env, "DOCKER_CONFIG="+configDir, "BUILDX_CONFIG="+buildxDir), nil
+}
+
+func buildOfficeImage(stage, image, version, logPath, configDir string, report BuildReport) error {
+	env, err := dockerBuildEnvironment(configDir)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := exec.CommandContext(ctx, "docker", "buildx", "version").Run(); err != nil {
+	check := exec.CommandContext(ctx, "docker", "buildx", "version")
+	check.Env = env
+	if err := check.Run(); err != nil {
 		return errors.New("BUILDX_REQUIRED: افزونهٔ Docker Buildx در دسترس نیست. مدیر سرور باید افزونهٔ سازگار با Docker نصب کند (در مخزن رسمی Docker: apt-get install docker-buildx-plugin)، سپس دوباره تلاش کنید؛ هیچ تغییری در دیتابیس انجام نشده است.")
 	}
 	var file *os.File
@@ -169,7 +208,8 @@ func buildOfficeImage(stage, image, version, logPath string, report BuildReport)
 	}
 	w := &buildOutput{file: file, report: report, vertices: map[string]string{}, completed: map[string]bool{}}
 	cmd := exec.Command("docker", "buildx", "build", "--builder", "default", "--load", "--progress", "plain", "--platform", "linux/"+runtime.GOARCH, "--target", "managed", "--build-arg", "APP_RELEASE_VERSION="+version, "-t", image, stage)
-	err := executeBuild(cmd, w, 45*time.Minute, 5*time.Minute)
+	cmd.Env = env
+	err = executeBuild(cmd, w, 45*time.Minute, 5*time.Minute)
 	if file != nil && w.bytes >= 32<<20 {
 		file.WriteString("\nآخرین خروجی ساخت:\n" + w.recent())
 	}
