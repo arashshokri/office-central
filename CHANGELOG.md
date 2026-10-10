@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-rc.20 — 2026-10-10
+
+- Publish Office v3.8.29 with independent inbound-install and accepted-operation quotas. Failed or invalid starts do not spend the operation quota, duplicate job responses count once, and running jobs are returned without another Central check.
+- Disable installation and confirmation during Retry-After, show an installation countdown, and discover ongoing jobs after a throttled start without replaying the POST. Keep progress and version confirmation intact.
+- Add `office-agent update --expected-version VERSION` and read-only `update-status` for recovering installations whose old Office web counters block the upgrade. The helper still validates the signed license, hardware and authorized package; refreshing the helper alone does not replace old Office PHP/JavaScript.
+- Reproduce the 3.8.23 shared-counter failure and verify failed starts, duplicate jobs, bounded quotas, cooldown and local version pinning. Document the complete Central grant, helper refresh and one-time CLI update sequence.
+
 ## 1.4.0-rc.19 — 2026-10-10
 
 - Publish Office v3.8.28 with private Docker and Buildx client state under the helper root. Override both configuration paths for source-build preflight and the actual build process, independently of shell or old service defaults.

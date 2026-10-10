@@ -37,7 +37,7 @@ final class OfficeUpdateController extends Controller
         $this->authorizeAdmin($request);
         $data = $request->validate(['expected_version' => ['required', 'string', 'regex:/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/D'], 'expected_release_id' => ['nullable', 'uuid']]);
         try {
-            return response()->json($license->startUpdate($data), 202);
+            return response()->json($license->startUpdate($data), 202)->header('Cache-Control', 'no-store, private');
         } catch (\RuntimeException $error) {
             return $this->helperError($error);
         }

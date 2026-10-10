@@ -109,12 +109,35 @@ test('status polling respects Retry-After and resumes at the server deadline', a
 });
 
 test('a throttled install is never automatically replayed', async () => {
-    const page = ui([reply(429, {}, '10')], { offer: available.update });
+    const page = ui([reply(429, {}, '10'), reply(200, {})], { offer: available.update });
     page.click('installUpdate');
     await page.click('confirmInstall');
     assert.match(page.element('updateError').textContent, /10/);
+    assert.equal(page.element('installUpdate').disabled, true);
+    assert.equal(page.element('confirmInstall').disabled, true);
+    await page.click('installUpdate');
+    await page.click('confirmInstall');
+    assert.equal(page.calls.length, 1);
+    await page.advance(9999);
+    assert.equal(page.element('installUpdate').disabled, true);
+    assert.match(page.element('updateMessage').textContent, /1 ثانیه/);
+    await page.advance(1);
+    assert.equal(page.element('installUpdate').disabled, false);
     await page.advance(60000);
-    assert.deepEqual(page.calls, [{ url: '/install', method: 'POST' }]);
+    assert.deepEqual(page.calls, [{ url: '/install', method: 'POST' }, { url: '/status', method: 'GET' }]);
+});
+
+test('a throttled start still discovers an existing operation without replaying installation', async () => {
+    const page = ui([reply(429, {}, '10'), reply(200, { id: 'job-a', status: 'running', stage: 'build', progress: 30 })],
+        { offer: available.update });
+    page.click('installUpdate');
+    await page.click('confirmInstall');
+    await page.advance(2500);
+    assert.deepEqual(page.calls.map(call => call.method), ['POST', 'GET']);
+    assert.equal(page.element('installPercent').textContent, '30%');
+    assert.equal(page.element('installUpdate').disabled, true);
+    await page.advance(1000);
+    assert.match(page.element('updateMessage').textContent, /بروزرسانی در حال انجام/);
 });
 
 test('installation progress uses milestones, survives reload and reaches 100 only on success', async () => {

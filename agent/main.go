@@ -34,7 +34,7 @@ func execute() error {
 		return errors.New("run office-agent as root")
 	}
 	if len(os.Args) < 2 {
-		return errors.New("usage: office-agent setup|connect|install|resume|daemon|status|reactivate|update [--root PATH]")
+		return errors.New("usage: office-agent setup|connect|install|resume|daemon|status|reactivate|update|update-status [--root PATH] [--expected-version VERSION]")
 	}
 	command := os.Args[1]
 	if command == "setup" {
@@ -56,8 +56,12 @@ func execute() error {
 	root := flags.String("root", defaultRoot, "persistent helper directory")
 	endpoint := flags.String("endpoint", "https://update.ponet.ir", "HTTPS update origin")
 	adopt := flags.String("adopt-env", "", "original Office environment for adoption")
+	expectedVersion := flags.String("expected-version", "", "Office version approved for this update")
 	if e := flags.Parse(os.Args[2:]); e != nil {
 		return e
+	}
+	if *expectedVersion != "" && (command != "update" || !regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$`).MatchString(*expectedVersion)) {
+		return errors.New("expected-version requires update and a valid Office version")
 	}
 	*root = filepath.Clean(*root)
 	if !regexp.MustCompile(`^/[A-Za-z0-9/_-]+$`).MatchString(*root) || *root == "/" {
@@ -88,7 +92,10 @@ func execute() error {
 		fmt.Printf("Installation: %s\nAccess: %s\nMessage: %s\nVersion: %s\n", s.Installation, s.Access, s.Message, installedVersion)
 		return nil
 	}
-	if command == "reactivate" || command == "update" {
+	if command == "update" {
+		return c.localRequest(command, UpdateConfirmation{Version: *expectedVersion})
+	}
+	if command == "reactivate" || command == "update-status" {
 		code := ""
 		if command == "reactivate" {
 			code, e = prompt("New one-use license: ")
@@ -257,11 +264,17 @@ func prompt(label string) (string, error) {
 	return value, nil
 }
 func (c *Client) local(action, code string) error {
+	return c.localRequest(action, map[string]string{"license_key": code})
+}
+func (c *Client) localRequest(action string, payload any) error {
 	transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(c.Root, "agent/control/control.sock"))
 	}}
 	client := http.Client{Transport: transport, Timeout: 30 * time.Minute}
-	body, _ := json.Marshal(map[string]string{"license_key": code})
+	body, e := json.Marshal(payload)
+	if e != nil {
+		return e
+	}
 	req, _ := http.NewRequest("POST", "http://localhost/"+action, strings.NewReader(string(body)))
 	req.Header.Set("Authorization", "Bearer "+c.Identity.Control)
 	req.Header.Set("Content-Type", "application/json")

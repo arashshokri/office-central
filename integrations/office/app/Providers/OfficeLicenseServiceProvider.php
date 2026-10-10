@@ -8,8 +8,10 @@ use App\Models\User;
 use App\Services\OfficeLicense;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
@@ -24,17 +26,40 @@ final class OfficeLicenseServiceProvider extends ServiceProvider
     {
         // Numeric throttle middleware shares a user counter across routes.
         // Status polling must never consume check, install or activation quotas.
-        foreach (['office-update-check' => 30, 'office-update-install' => 3,
+        $limitedResponse = function (Request $request, array $headers) {
+            $seconds = max(1, (int) ($headers['Retry-After'] ?? 60));
+
+            return response()->json(['message' => "تعداد درخواست‌های این عملیات زیاد است؛ {$seconds} ثانیه صبر کنید و دوباره تلاش کنید.",
+                'retry_after' => $seconds], 429, $headers + ['Cache-Control' => 'no-store, private']);
+        };
+        foreach (['office-update-check' => 30,
             'office-update-status' => 120, 'office-license-reactivate' => 6] as $name => $attempts) {
             RateLimiter::for($name, fn (Request $request) => Limit::perMinute($attempts)
                 ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip()))
-                ->response(function (Request $request, array $headers) {
-                    $seconds = max(1, (int) ($headers['Retry-After'] ?? 60));
-
-                    return response()->json(['message' => "تعداد درخواست‌های این عملیات زیاد است؛ {$seconds} ثانیه صبر کنید و دوباره تلاش کنید.",
-                        'retry_after' => $seconds], 429, $headers + ['Cache-Control' => 'no-store, private']);
-                }));
+                ->response($limitedResponse));
         }
+        RateLimiter::for('office-update-install', function (Request $request) use ($limitedResponse) {
+            $user = (string) ($request->user()?->getAuthIdentifier() ?? $request->ip());
+            // Bound all incoming requests, including invalid/failed submissions.
+            $limits = [Limit::perMinute(60)->by('requests:'.$user)->response($limitedResponse)];
+            if ((app(OfficeLicense::class)->updateStatus()['status'] ?? null) === 'running') {
+                return $limits;
+            }
+            // Failed starts don't spend the operation quota. Duplicate responses
+            // for the same helper job spend it once, even across tabs/users.
+            $limits[] = Limit::perMinute(10)->by('starts:'.$user)->response($limitedResponse)
+                ->after(function ($response) {
+                    if (! $response instanceof JsonResponse || $response->getStatusCode() !== 202) {
+                        return false;
+                    }
+                    $job = $response->getData(true);
+
+                    return ($job['status'] ?? null) === 'running' && ! empty($job['id'])
+                        && Cache::add('office-update-counted:'.hash('sha256', $job['id']), true, 120);
+                });
+
+            return $limits;
+        });
         if (is_file(base_path('office-managed')) && is_dir(base_path('protected-views'))) {
             config(['view.compiled' => base_path('protected-views'), 'view.check_cache_timestamps' => false]);
         }

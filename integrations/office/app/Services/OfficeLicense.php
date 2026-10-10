@@ -103,6 +103,10 @@ final class OfficeLicense
 
     public function startUpdate(array $confirmation): array
     {
+        $job = $this->updateStatus();
+        if (($job['status'] ?? null) === 'running') {
+            return $job;
+        }
         $checked = $this->checkUpdates();
         if (($checked['status'] ?? '') === 'running') {
             return $checked;

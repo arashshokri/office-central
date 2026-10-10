@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,68 @@ import (
 	"testing"
 	"time"
 )
+
+func TestLocalUpdatePinsVersionAndStatusDoesNotStartWork(t *testing.T) {
+	root, err := os.MkdirTemp("", "office-cli-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	control := filepath.Join(root, "agent/control")
+	if err = os.MkdirAll(control, 0700); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", filepath.Join(control, "control.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := make(chan string, 2)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer fixture-control" || r.Method != "POST" {
+			t.Error("missing local authentication", r.Header, r.Method)
+		}
+		requests <- r.URL.Path
+		if r.URL.Path == "/update" {
+			var confirmation UpdateConfirmation
+			if json.NewDecoder(r.Body).Decode(&confirmation) != nil || confirmation.Version != "3.8.29" {
+				t.Error("CLI approval was not sent to the helper", confirmation)
+			}
+		} else if r.URL.Path != "/update-status" {
+			t.Error("unexpected endpoint", r.URL.Path)
+		}
+		writeControlJSON(w, 202, UpdateJob{ID: "existing-job", Status: "running"})
+	})}
+	go server.Serve(listener)
+	defer server.Close()
+	c := &Client{Root: root}
+	c.Identity.Control = "fixture-control"
+	if err = c.localRequest("update", UpdateConfirmation{Version: "3.8.29"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.local("update-status", ""); err != nil {
+		t.Fatal(err)
+	}
+	if <-requests != "/update" || <-requests != "/update-status" {
+		t.Fatal("status command started another operation")
+	}
+}
+
+func TestRepeatedLocalStartsReturnExistingJobWithoutCentralRequests(t *testing.T) {
+	c := &Client{Root: t.TempDir()}
+	job := UpdateJob{ID: "existing-job", Status: "running", Version: "3.8.29", Stage: "build"}
+	if err := c.saveJob(job); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/update", strings.NewReader(`{"expected_version":"3.8.29"}`))
+		c.handleUpdates(w, r, &sync.Mutex{}, func(State) { t.Fatal("unexpected enforcement") })
+		var got UpdateJob
+		if w.Code != 202 || json.Unmarshal(w.Body.Bytes(), &got) != nil || got != job {
+			t.Fatal(w.Code, w.Body)
+		}
+	}
+}
 
 func TestProgressMilestonesAreMonotonicAndNeverFinishBeforeReceipt(t *testing.T) {
 	c := &Client{Root: t.TempDir()}

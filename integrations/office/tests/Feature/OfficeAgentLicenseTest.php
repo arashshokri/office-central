@@ -63,6 +63,15 @@ while($connection=stream_socket_accept($server,10)){
         }
         $result=['confirmation_supported'=>!file_exists($dir.'/old-helper'),'installed_version'=>'3.8.22',
             'update'=>['available'=>true,'version'=>'3.8.23','release_id'=>'b80a7eb6-8d49-4f42-b3ed-16e3a916b57e']];
+    } elseif($path[1]==='/update') {
+        if(file_exists($dir.'/failed-start')) {
+            $out=json_encode(['message'=>'BUILD_PREFLIGHT fixture failure']);
+            fwrite($connection,"HTTP/1.1 502 Bad Gateway\r\nContent-Length: ".strlen($out)."\r\nConnection: close\r\n\r\n".$out);
+            fclose($connection);continue;
+        }
+        $result=['id'=>file_exists($dir.'/duplicate-start')?'shared-job-fixture':bin2hex(random_bytes(8)),
+            'status'=>'running','version'=>'3.8.23','stage'=>'queued'];
+        if(!file_exists($dir.'/duplicate-start')) file_put_contents($dir.'/update.json',json_encode($result));
     } else {$result=['status'=>'running','version'=>'3.8.23'];}
     $out=json_encode($result);
     fwrite($connection,"HTTP/1.1 200 OK\r\nContent-Length: ".strlen($out)."\r\nConnection: close\r\n\r\n".$out);
@@ -236,6 +245,88 @@ PHP;
             ->assertHeader('Retry-After', '7')->assertJsonPath('retry_after', 7)
             ->assertDontSee('Too Many Attempts');
         $this->getJson('/settings/system-update/status')->assertOk();
+    }
+
+    public function test_failed_and_invalid_starts_do_not_spend_the_new_operation_quota(): void
+    {
+        $this->actingAs(User::factory()->make(['id' => 85, 'role' => 'admin', 'is_active' => true]));
+        file_put_contents($this->dir.'/failed-start', '1');
+        for ($i = 0; $i < 12; $i++) {
+            $this->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])
+                ->assertStatus(502)->assertSee('BUILD_PREFLIGHT');
+        }
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson('/settings/system-update/install')->assertUnprocessable();
+        }
+        unlink($this->dir.'/failed-start');
+        $this->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])
+            ->assertStatus(202)->assertJsonPath('status', 'running')->assertHeader('Cache-Control', 'no-store, private');
+    }
+
+    public function test_running_operation_is_returned_without_rechecking_central_or_starting_again(): void
+    {
+        $this->actingAs(User::factory()->make(['id' => 86, 'role' => 'admin', 'is_active' => true]));
+        $confirmation = ['expected_version' => '3.8.23'];
+        $id = $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(202)->json('id');
+        for ($i = 0; $i < 20; $i++) {
+            $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(202)->assertJsonPath('id', $id);
+        }
+        $requests = array_map(fn ($line) => json_decode($line, true), file($this->dir.'/requests', FILE_IGNORE_NEW_LINES));
+        $this->assertCount(1, array_filter($requests, fn ($request) => $request['path'] === '/update'));
+        $this->assertCount(1, array_filter($requests, fn ($request) => $request['path'] === '/check-update'));
+    }
+
+    public function test_new_operation_limit_remains_bounded_and_never_hides_a_running_job(): void
+    {
+        $this->actingAs(User::factory()->make(['id' => 87, 'role' => 'admin', 'is_active' => true]));
+        $confirmation = ['expected_version' => '3.8.23'];
+        for ($i = 0; $i < 10; $i++) {
+            file_put_contents($this->dir.'/update.json', json_encode(['status' => 'error', 'stage' => 'build']));
+            $id = $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(202)->json('id');
+        }
+        $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(202)->assertJsonPath('id', $id);
+        file_put_contents($this->dir.'/update.json', json_encode(['status' => 'error', 'stage' => 'build']));
+        $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(429)->assertHeader('Retry-After');
+        $this->getJson('/settings/system-update/status')->assertOk();
+        $this->postJson('/settings/system-update/check')->assertOk();
+        $this->travel(61)->seconds();
+        $this->postJson('/settings/system-update/install', $confirmation)->assertStatus(202);
+    }
+
+    public function test_invalid_install_request_flood_is_still_bounded_independently(): void
+    {
+        $this->actingAs(User::factory()->make(['id' => 88, 'role' => 'admin', 'is_active' => true]));
+        for ($i = 0; $i < 60; $i++) {
+            $this->postJson('/settings/system-update/install')->assertUnprocessable();
+        }
+        $this->postJson('/settings/system-update/install')->assertStatus(429)->assertHeader('Retry-After');
+        $this->getJson('/settings/system-update/status')->assertOk();
+        $this->postJson('/settings/system-update/check')->assertOk();
+    }
+
+    public function test_duplicate_accepted_response_is_counted_once_even_before_status_file_is_visible(): void
+    {
+        file_put_contents($this->dir.'/duplicate-start', '1');
+        $this->actingAs(User::factory()->make(['id' => 89, 'role' => 'admin', 'is_active' => true]));
+        for ($i = 0; $i < 15; $i++) {
+            $this->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])
+                ->assertStatus(202)->assertJsonPath('id', 'shared-job-fixture');
+        }
+    }
+
+    public function test_legacy_shared_counter_is_reproduced_but_does_not_block_new_update_routes(): void
+    {
+        \Illuminate\Support\Facades\Route::get('/_legacy-update/status', fn () => response()->json([]))
+            ->middleware(['web', 'auth', 'throttle:60,1']);
+        \Illuminate\Support\Facades\Route::post('/_legacy-update/install', fn () => response()->json([]))
+            ->middleware(['web', 'auth', 'throttle:3,1']);
+        $this->actingAs(User::factory()->make(['id' => 90, 'role' => 'admin', 'is_active' => true]));
+        for ($i = 0; $i < 4; $i++) {
+            $this->getJson('/_legacy-update/status')->assertOk();
+        }
+        $this->postJson('/_legacy-update/install')->assertStatus(429)->assertSee('Too Many Attempts');
+        $this->postJson('/settings/system-update/check')->assertOk();
+        $this->postJson('/settings/system-update/install', ['expected_version' => '3.8.23'])->assertStatus(202);
     }
 
     public function test_settings_tile_is_visible_only_to_the_two_administrator_roles(): void

@@ -18,8 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const modal = new bootstrap.Modal(byId('officeUpdateConfirm'));
     const buttons = () => {
         check.disabled = running || checking || starting || cooling;
-        install.disabled = running || checking || starting || !offer?.version;
-        byId('confirmInstall').disabled = running || starting;
+        install.disabled = running || checking || starting || cooling || !offer?.version;
+        byId('confirmInstall').disabled = running || checking || starting || cooling;
     };
     const api = async (url, method = 'GET', body = null) => {
         const controller = new AbortController();
@@ -74,11 +74,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (status === 'error') byId('installProgressBar').classList.add('bg-danger');
         if (status === 'success') byId('installProgressBar').classList.add('bg-success');
     };
-    const cooldown = seconds => {
+    const cooldown = (seconds, installing = false) => {
         cooling = true; buttons(); clearTimeout(cooldownTimer);
         const tick = () => {
-            byId('checkMessage').textContent = 'بررسی بعدی تا ' + seconds + ' ثانیه دیگر…';
-            if (seconds <= 0) { cooling = false; buttons(); return; }
+            const message = installing ? byId('updateMessage') : byId('checkMessage');
+            if (seconds <= 0) {
+                cooling = false; buttons();
+                if (!installing || !running) message.textContent = installing ? 'زمان انتظار پایان یافت؛ برای ادامه، نسخه را دوباره تأیید کنید.' : 'می‌توانید دوباره بروزرسانی را بررسی کنید.';
+                return;
+            }
+            if (!installing || !running) message.textContent = (installing ? 'تأیید دوبارهٔ بروزرسانی' : 'بررسی بعدی') + ' تا ' + seconds + ' ثانیه دیگر…';
             seconds -= 1;
             cooldownTimer = setTimeout(tick, 1000);
         };
@@ -109,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         error.hidden = !job.error;
         if (job.error) error.textContent = job.error;
         if (job.status === 'error' && job.version) {
-            renderOffer({ available: true, version: job.version, notes: 'عملیات قبلی کامل نشده است. پس از رفع خطای نمایش‌داده‌شده، برای ادامه تأیید کنید.' });
+            renderOffer({ ...(offer?.version === job.version ? offer : {}), available: true, version: job.version, notes: 'عملیات قبلی کامل نشده است. پس از رفع خطای نمایش‌داده‌شده، برای ادامه تأیید کنید.' });
         }
         if (job.status === 'success') {
             renderOffer(null);
@@ -119,17 +124,20 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(pollTimer);
         if (running) pollTimer = setTimeout(poll, 2500);
     };
-    const poll = async () => {
+    const poll = async (discovering = false) => {
         try {
             const job = await api(root.dataset.statusUrl);
-            if (!job.status) throw new Error('وضعیت عملیات هنوز در دسترس نیست؛ پیگیری ادامه دارد.');
+            if (!job.status) {
+                if (discovering) return;
+                throw new Error('وضعیت عملیات هنوز در دسترس نیست؛ پیگیری ادامه دارد.');
+            }
             pollFailures = 0; renderJob(job);
         }
         catch (e) {
             byId('updateMessage').textContent = e.retryAfter ? 'پیگیری وضعیت پس از پایان زمان انتظار ادامه می‌یابد.' : 'در انتظار راه‌اندازی سرویس…';
             fail(e);
             pollFailures += 1;
-            pollTimer = setTimeout(poll, e.retryAfter ? e.retryAfter * 1000 : Math.min(30000, 5000 * pollFailures));
+            pollTimer = setTimeout(() => poll(discovering), e.retryAfter ? e.retryAfter * 1000 : Math.min(30000, 5000 * pollFailures));
         }
     };
     const waitBeforeCheckRetry = seconds => new Promise(resolve => {
@@ -178,14 +186,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally { checking = false; buttons(); }
     });
     install.addEventListener('click', () => {
-        if (!offer?.version || running || checking || starting) return;
+        if (!offer?.version || running || checking || starting || cooling) return;
         confirmation = { expected_version: offer.version, expected_release_id: offer.release_id || null };
         byId('confirmCurrentVersion').textContent = 'v' + currentVersion;
         byId('confirmNewVersion').textContent = 'v' + offer.version;
         modal.show();
     });
     byId('confirmInstall').addEventListener('click', async () => {
-        if (!confirmation || starting || running) return;
+        if (!confirmation || starting || running || checking || cooling) return;
         starting = true; buttons(); error.hidden = true; modal.hide();
         byId('updateProgress').hidden = false;
         byId('updateSpinner').hidden = false;
@@ -196,10 +204,10 @@ document.addEventListener('DOMContentLoaded', () => {
         catch (e) {
             byId('updateSpinner').hidden = true; setInstallPercent(0, 'error');
             byId('updateMessage').textContent = 'پاسخ آغاز بروزرسانی دریافت نشد؛ وضعیت عملیات بررسی می‌شود.'; fail(e);
-            if (e.retryAfter) cooldown(e.retryAfter);
+            if (e.retryAfter) cooldown(e.retryAfter, true);
             // A lost POST response may have started work. Read status once;
             // never replay installation, backup or migrations automatically.
-            if (!e.retryAfter) pollTimer = setTimeout(poll, 2500);
+            pollTimer = setTimeout(() => poll(true), 2500);
         }
         finally { starting = false; buttons(); }
     });
