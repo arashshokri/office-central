@@ -375,5 +375,12 @@ PHP;
         $this->assertGreaterThan($modal, $progress);
         $this->assertStringContainsString('بستن پنجره، عملیات را متوقف نمی‌کند.', $html);
         $this->assertStringContainsString('id="showUpdateProgress"', $html);
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        $xpath = new \DOMXPath($dom);
+        $this->assertSame('button', $xpath->query('//*[@id="showUpdateProgress"]')->item(0)->tagName);
+        $this->assertSame(0, $xpath->query('//*[@id="operationSummary"]/ancestor::button')->length);
+        $this->assertSame(1, $xpath->query('//*[@id="installPercent"]/ancestor::*[@id="officeUpdateConfirm"]')->length);
+        $this->assertSame(1, $xpath->query('//*[@id="installProgressTrack"]/ancestor::*[@id="officeUpdateConfirm"]')->length);
     }
 }

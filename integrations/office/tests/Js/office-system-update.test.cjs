@@ -17,6 +17,7 @@ const available = { confirmation_supported: true, installed_version: '3.8.24',
 function ui(responses, initial = {}) {
     const elements = new Map(), calls = [], timers = new Map();
     let timerId = 0, now = 0, loaded;
+    const windowEvents = {};
     const element = id => {
         if (!elements.has(id)) elements.set(id, { hidden: true, disabled: false, textContent: '', style: {},
             dataset: {}, events: {}, classList: { add() {}, remove() {} }, setAttribute() {},
@@ -32,7 +33,7 @@ function ui(responses, initial = {}) {
     vm.runInNewContext(script, {
         document: { getElementById: element, querySelector: () => ({ content: 'csrf' }),
             addEventListener: (name, fn) => { loaded = fn; } },
-        window: { officeUpdateInitial: initial }, navigator: {}, AbortController,
+        window: { officeUpdateInitial: initial, addEventListener(name, fn) { windowEvents[name] = fn; } }, navigator: {}, AbortController,
         bootstrap: { Modal: class { constructor(node) { this.node = node; } show() { this.node.open = true; } hide() { this.node.open = false; } } }, location: { reload() {} },
         setTimeout: (fn, delay) => schedule(fn, delay), clearTimeout: id => timers.delete(id),
         setInterval: (fn, delay) => schedule(fn, delay, true), clearInterval: id => timers.delete(id),
@@ -43,7 +44,7 @@ function ui(responses, initial = {}) {
         },
     });
     loaded();
-    return { element, calls, click: id => element(id).events.click(),
+    return { element, calls, click: id => element(id).events.click(), pageshow: () => windowEvents.pageshow({persisted:true}),
         async advance(ms) {
             const end = now + ms;
             while (true) {
@@ -200,6 +201,45 @@ test('confirmation remains open and displays authoritative progress through succ
     await page.advance(2500);
     assert.equal(page.element('installPercent').textContent, '100%');
     assert.match(page.element('officeUpdateConfirmTitle').textContent, /با موفقیت/);
+});
+
+test('completed historical jobs stay hidden after reload without suppressing a new offer', () => {
+    const page = ui([], {job:{id:'finished',status:'success',version:'3.8.24',progress:100}, offer:available.update});
+    assert.equal(page.element('updateProgressActions').hidden, true);
+    assert.equal(page.element('showUpdateProgress').hidden, true);
+    assert.equal(page.element('updateProgress').hidden, true);
+    assert.equal(page.element('operationSummary').textContent, '');
+    assert.notEqual(page.element('officeUpdateConfirm').open, true);
+    assert.equal(page.element('offeredVersion').textContent, 'v3.8.25');
+    assert.equal(page.calls.length, 0);
+});
+
+test('returning via browser Back clears a completed announcement and its window', async () => {
+    const page = ui([reply(202,{id:'active',status:'running',stage:'build',progress:34}),
+        reply(200,{id:'active',status:'success',stage:'complete',progress:100})], {offer:available.update});
+    page.click('installUpdate'); await page.click('confirmInstall'); await page.advance(2500);
+    assert.equal(page.element('installPercent').textContent, '100%');
+    assert.equal(page.element('updateProgressActions').hidden, false);
+    page.pageshow();
+    assert.equal(page.element('officeUpdateConfirm').open, false);
+    assert.equal(page.element('updateProgressActions').hidden, true);
+    assert.equal(page.element('operationSummary').textContent, '');
+});
+
+test('installation hides the separate check meter and only its button opens progress', async () => {
+    const page = ui([reply(200,available), reply(202,{id:'active',status:'running',stage:'build',progress:34})]);
+    await page.click('checkUpdate');
+    assert.equal(page.element('checkProgress').hidden, false);
+    page.click('installUpdate');
+    assert.equal(page.element('checkProgress').hidden, true);
+    await page.click('confirmInstall');
+    assert.equal(page.element('installPercent').textContent, '34%');
+    assert.equal(page.element('checkProgress').hidden, true);
+    assert.equal(page.element('updateProgressActions').events.click, undefined);
+    assert.equal(page.element('operationSummary').events.click, undefined);
+    page.element('officeUpdateConfirm').open = false;
+    page.click('showUpdateProgress');
+    assert.equal(page.element('officeUpdateConfirm').open, true);
 });
 
 test('reloading an active operation restores its progress window without a second POST', () => {

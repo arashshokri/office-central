@@ -110,13 +110,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderJob = job => {
         if (!job.status) return;
+        // Completed jobs remain in the helper's audit record. Only announce
+        // completion for an operation observed or started in this page visit.
+        if (job.status === 'success' && !running && !starting && !(job.id && job.id === jobId)) return;
         lastJobStatus = job.status;
         const wasRunning = running;
         if (job.id && job.id !== jobId) { jobId = job.id; installPercent = 0; }
         running = job.status === 'running';
         const milestones = { queued: 0, authorization: 3, download: 8, build: 30, backup: 65, migration: 75, services: 85, health: 94, confirmation: 98 };
         setInstallPercent(job.progress ?? milestones[job.stage] ?? 0, job.status);
+        progress.hidden = true;
         byId('updateProgress').hidden = false;
+        byId('updateProgressActions').hidden = false;
         byId('showUpdateProgress').hidden = false;
         byId('operationSummary').textContent = job.message || 'مشاهدهٔ وضعیت بروزرسانی';
         byId('confirmCurrentVersion').textContent = 'v' + currentVersion;
@@ -208,6 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('confirmCurrentVersion').textContent = 'v' + currentVersion;
         byId('confirmNewVersion').textContent = 'v' + offer.version;
         modalHasProgress = false;
+        progress.hidden = true;
         byId('updateProgress').hidden = true;
         error.hidden = true;
         modalState();
@@ -216,6 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
     byId('confirmInstall').addEventListener('click', async () => {
         if (!confirmation || starting || running || checking || cooling) return;
         starting = true; lastJobStatus = null; buttons(); error.hidden = true; modalHasProgress = true; modalState('running');
+        progress.hidden = true;
+        byId('updateProgressActions').hidden = false;
         byId('showUpdateProgress').hidden = false;
         byId('updateProgress').hidden = false;
         byId('updateSpinner').hidden = false;
@@ -239,6 +247,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     byId('showUpdateProgress').addEventListener('click', () => { modalHasProgress = true; byId('updateProgress').hidden = false; modal.show(); });
     byId('officeUpdateConfirm').addEventListener('hidden.bs.modal', () => { if (!starting && !modalHasProgress) confirmation = null; });
+    window.addEventListener('pageshow', event => {
+        // Browser Back may restore the previous DOM instead of loading it.
+        if (!event.persisted || lastJobStatus !== 'success') return;
+        modal.hide(); modalHasProgress = false; lastJobStatus = null; jobId = null; confirmation = null;
+        byId('updateProgressActions').hidden = true; byId('showUpdateProgress').hidden = true;
+        byId('operationSummary').textContent = ''; byId('updateProgress').hidden = true;
+        progress.hidden = true; error.hidden = true;
+    });
     renderOffer(initial.offer);
     renderJob(initial.job || {});
 });
