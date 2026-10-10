@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('updateSpinner').hidden = !running;
         error.hidden = !job.error;
         if (job.error) error.textContent = job.error;
-        if (job.status === 'error' && job.version) {
+        if (job.status === 'error' && job.version && (!offer || offer.version === job.version)) {
             renderOffer({ ...(offer?.version === job.version ? offer : {}), available: true, version: job.version, notes: 'عملیات قبلی کامل نشده است. پس از رفع خطای نمایش‌داده‌شده، برای ادامه تأیید کنید.' });
         }
         if (job.status === 'success') {

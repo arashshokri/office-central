@@ -165,6 +165,15 @@ test('old helper milestones and failed installations never claim completion', as
     assert.equal(page.element('updateError').textContent, 'SQLSTATE');
 });
 
+test('an old failed operation does not replace a newly authorized version', () => {
+    const page = ui([], { offer: available.update,
+        job: { id: 'old-job', status: 'error', version: '3.8.23', stage: 'build', error: 'previous build failed' } });
+    assert.equal(page.element('offeredVersion').textContent, 'v3.8.25');
+    page.click('installUpdate');
+    assert.equal(page.element('confirmNewVersion').textContent, 'v3.8.25');
+    assert.equal(page.element('updateError').textContent, 'previous build failed');
+});
+
 test('a lost install response is followed by status reads, never a second install POST', async () => {
     const page = ui([reply(502, { message: 'Restarting' }), reply(200, { id: 'job-a', status: 'running', stage: 'build', progress: 30 })],
         { offer: available.update });
