@@ -363,4 +363,17 @@ PHP;
         $user = User::factory()->make(['id' => 1, 'role' => 'admin', 'is_active' => true]);
         $this->actingAs($user)->getJson('/settings/system-update/status')->assertOk()->assertJsonPath('error', 'SQLSTATE fixture');
     }
+
+    public function test_update_progress_is_inside_the_confirmation_window(): void
+    {
+        $user = User::factory()->make(['id' => 1, 'role' => 'admin', 'is_active' => true]);
+        $html = $this->actingAs($user)->get('/settings/system-update')->assertOk()->getContent();
+        $modal = strpos($html, 'id="officeUpdateConfirm"');
+        $progress = strpos($html, 'id="installProgressTrack"');
+        $this->assertNotFalse($modal);
+        $this->assertNotFalse($progress);
+        $this->assertGreaterThan($modal, $progress);
+        $this->assertStringContainsString('بستن پنجره، عملیات را متوقف نمی‌کند.', $html);
+        $this->assertStringContainsString('id="showUpdateProgress"', $html);
+    }
 }

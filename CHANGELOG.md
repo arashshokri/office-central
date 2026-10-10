@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0-rc.22 — 2026-10-10
+
+- Add a persistent HTTPS web installation wizard to the Office agent. Fresh setup prints a private, expiring URL; the browser verifies the one-use license, selects administrator credentials and connection settings, confirms installation and follows actual deployment progress.
+- Authenticate setup APIs with a random bearer secret kept out of request URLs, reject foreign hosts/origins, serve only embedded static assets, protect TLS/admin secrets and close the wizard after completion. Support supplied trusted certificates or a temporary certificate with a displayed SHA-256 fingerprint.
+- Keep failed installation credentials, identity, cached packages and customer database intact; serialize installation starts and require explicit retry. Reserve licenses at verification and consume them only after health and the signed completion receipt.
+- Keep Office's update confirmation window open for server-reported progress, errors and success. Restore active jobs on reload and allow reopening progress without another installation POST.
+- Cover setup TLS/authentication, settings validation, progress, lost browser responses, idempotent starts and data-preserving retries. Validate embedded TLS under the actual systemd protections and check the UI in both themes and mobile layout.
+
 ## 1.4.0-rc.21 — 2026-10-10
 
 - Normalize extracted public source files to 0644 (0755 for executable scripts) and child directories to 0755 under the helper's UMask=0077. Keep the extraction root and all customer credentials private.

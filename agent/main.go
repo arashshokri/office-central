@@ -38,12 +38,15 @@ func execute() error {
 	}
 	command := os.Args[1]
 	if command == "setup" {
-		command = "install"
+		command = "web-setup"
 		if existingOfficeDetected() {
 			command = "connect"
 		}
 		if _, err := os.Stat("/opt/office/compose.json"); err == nil {
 			command = "resume"
+		}
+		if pendingWebSetup("/opt/office") {
+			command = "web-setup"
 		}
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -57,6 +60,11 @@ func execute() error {
 	endpoint := flags.String("endpoint", "https://update.ponet.ir", "HTTPS update origin")
 	adopt := flags.String("adopt-env", "", "original Office environment for adoption")
 	expectedVersion := flags.String("expected-version", "", "Office version approved for this update")
+	setupHost := flags.String("setup-host", "", "reachable installer hostname or IP")
+	setupBind := flags.String("setup-bind", "0.0.0.0", "installer listen IP")
+	setupPort := flags.Int("setup-port", 8443, "installer HTTPS port")
+	setupCert := flags.String("setup-cert", "", "optional trusted TLS certificate PEM")
+	setupKey := flags.String("setup-key", "", "optional trusted TLS private key PEM")
 	if e := flags.Parse(os.Args[2:]); e != nil {
 		return e
 	}
@@ -73,6 +81,12 @@ func execute() error {
 	c, e := openClient(*root, *endpoint)
 	if e != nil {
 		return e
+	}
+	if command == "web-setup" {
+		return c.launchWizard(*setupHost, *setupBind, *setupPort, *setupCert, *setupKey)
+	}
+	if command == "wizard" {
+		return c.serveWizard()
 	}
 	if command == "status" {
 		raw, e := os.ReadFile(filepath.Join(*root, "agent/public/state.json"))

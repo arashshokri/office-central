@@ -33,7 +33,7 @@ function ui(responses, initial = {}) {
         document: { getElementById: element, querySelector: () => ({ content: 'csrf' }),
             addEventListener: (name, fn) => { loaded = fn; } },
         window: { officeUpdateInitial: initial }, navigator: {}, AbortController,
-        bootstrap: { Modal: class { show() {} hide() {} } }, location: { reload() {} },
+        bootstrap: { Modal: class { constructor(node) { this.node = node; } show() { this.node.open = true; } hide() { this.node.open = false; } } }, location: { reload() {} },
         setTimeout: (fn, delay) => schedule(fn, delay), clearTimeout: id => timers.delete(id),
         setInterval: (fn, delay) => schedule(fn, delay, true), clearInterval: id => timers.delete(id),
         fetch: async (url, options) => {
@@ -184,4 +184,28 @@ test('a lost install response is followed by status reads, never a second instal
     assert.deepEqual(page.calls.map(c => c.method), ['POST', 'GET']);
     assert.equal(page.element('installPercent').textContent, '30%');
     assert.equal(page.element('checkUpdate').disabled, true);
+});
+
+test('confirmation remains open and displays authoritative progress through success', async () => {
+    const page = ui([reply(202, {id:'modal-job', status:'running', stage:'build', progress:34, version:'3.8.25'}),
+        reply(200, {id:'modal-job', status:'success', stage:'complete', progress:100, version:'3.8.25'})], {offer:available.update});
+    page.click('installUpdate');
+    assert.equal(page.element('officeUpdateConfirm').open, true);
+    assert.equal(page.calls.length, 0, 'opening confirmation must not start work');
+    await page.click('confirmInstall');
+    assert.equal(page.element('officeUpdateConfirm').open, true);
+    assert.equal(page.element('installPercent').textContent, '34%');
+    assert.equal(page.element('confirmInstall').hidden, true);
+    assert.equal(page.element('cancelUpdate').textContent, 'بستن پنجره');
+    await page.advance(2500);
+    assert.equal(page.element('installPercent').textContent, '100%');
+    assert.match(page.element('officeUpdateConfirmTitle').textContent, /با موفقیت/);
+});
+
+test('reloading an active operation restores its progress window without a second POST', () => {
+    const page = ui([], {job:{id:'running-job',status:'running',stage:'services',progress:85,version:'3.8.25'}});
+    assert.equal(page.element('officeUpdateConfirm').open, true);
+    assert.equal(page.element('installPercent').textContent, '85%');
+    assert.equal(page.calls.length, 0);
+    assert.equal(page.element('showUpdateProgress').hidden, false);
 });

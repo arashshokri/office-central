@@ -43,7 +43,13 @@ func output(name string, args ...string) ([]byte, error) {
 func (c *Client) compose(args ...string) error { return c.composeInput(nil, args...) }
 func (c *Client) composeInput(input io.Reader, args ...string) error {
 	base := []string{"compose", "--project-name", "leave-panel", "--env-file", filepath.Join(c.Root, ".env"), "-f", filepath.Join(c.Root, "compose.json")}
-	return run(input, "docker", append(base, args...)...)
+	cmd := exec.Command("docker", append(base, args...)...)
+	cmd.Stdin = input
+	raw, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker failed: %s", errorSummary(cleanErrorText(string(raw)), 3000))
+	}
+	return nil
 }
 func validateManifest(m Manifest) error {
 	if m.Format == "office-source-v1" {
@@ -85,7 +91,7 @@ func shaFile(path string) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-func (c *Client) bundle(h Hardware, p Package) (string, error) {
+func (c *Client) bundle(h Hardware, p Package, progress ...func(int)) (string, error) {
 	if e := validateManifest(p.Manifest); e != nil {
 		return "", e
 	}
@@ -145,7 +151,11 @@ func (c *Client) bundle(h Hardware, p Package) (string, error) {
 	defer os.Remove(file.Name())
 	defer file.Close()
 	hash := sha256.New()
-	n, e := io.Copy(io.MultiWriter(file, hash), io.LimitReader(res.Body, p.Size+1))
+	writer := io.Writer(io.MultiWriter(file, hash))
+	if len(progress) > 0 && progress[0] != nil {
+		writer = &transferProgress{writer: writer, size: p.Size, report: progress[0]}
+	}
+	n, e := io.Copy(writer, io.LimitReader(res.Body, p.Size+1))
 	if e != nil {
 		return "", e
 	}
@@ -262,6 +272,18 @@ func (c *Client) configure(s *State, adopt string) error {
 		old = []byte("APP_NAME=Office\nAPP_ENV=production\nAPP_DEBUG=false\nAPP_KEY=base64:" + base64.StdEncoding.EncodeToString(key) + "\nDB_CONNECTION=mysql\nDB_HOST=db\nDB_PORT=3306\nDB_DATABASE=workflow\nDB_USERNAME=workflow_user\nDB_PASSWORD=" + randomHex(24) + "\nMARIADB_ROOT_PASSWORD=" + randomHex(24) + "\nMARIADB_AUTO_UPGRADE=1\nREDIS_CLIENT=predis\nREDIS_HOST=redis\nREDIS_PORT=6379\nREDIS_DB=0\nREDIS_CACHE_DB=1\nQUEUE_CONNECTION=database\nCACHE_STORE=redis\nSESSION_DRIVER=redis\nSESSION_SECURE_COOKIE=true\nSESSION_ENCRYPT=true\nAPP_TIMEZONE=Asia/Tehran\nSSM_TERMINAL_SERVICE_SECRET=" + randomHex(32) + "\n")
 	}
 	d := &s.Deployment
+	if raw, err := os.ReadFile(filepath.Join(c.Root, "agent/private/setup-deployment.json")); err == nil {
+		var local Deployment
+		if err = json.Unmarshal(raw, &local); err != nil {
+			return err
+		}
+		if local.URL != d.URL {
+			return errors.New("customer URL differs from the licensed setup URL")
+		}
+		*d = local
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	u, e := url.Parse(d.URL)
 	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
 		return errors.New("license must specify a valid HTTPS customer URL")
@@ -297,8 +319,12 @@ func (c *Client) configure(s *State, adopt string) error {
 		if d.Email == "" {
 			return errors.New("initial administrator email is required")
 		}
-		if e = atomicJSON(filepath.Join(c.Root, "initial-admin.json"), map[string]string{"email": d.Email, "name": d.Name, "password": randomHex(12)}, 0600); e != nil {
-			return e
+		if _, err := os.Stat(filepath.Join(c.Root, "initial-admin.json")); os.IsNotExist(err) {
+			if e = atomicJSON(filepath.Join(c.Root, "initial-admin.json"), map[string]string{"email": d.Email, "name": d.Name, "password": randomHex(12)}, 0600); e != nil {
+				return e
+			}
+		} else if err != nil {
+			return err
 		}
 	}
 	// Persist initial credentials before the environment. After a crash,
@@ -326,7 +352,7 @@ func (c *Client) writeCompose(s State) error {
 	}
 	app := service(nil)
 	app["container_name"] = "office-web"
-	app["ports"] = []string{fmt.Sprintf("%s:%d:8080", s.Deployment.Bind, s.Deployment.Port)}
+	app["ports"] = []string{net.JoinHostPort(s.Deployment.Bind, fmt.Sprint(s.Deployment.Port)) + ":8080"}
 	app["depends_on"] = map[string]any{"db": map[string]string{"condition": "service_healthy"}, "redis": map[string]string{"condition": "service_healthy"}}
 	health := func(cmd []string) map[string]any {
 		return map[string]any{"test": cmd, "interval": "10s", "timeout": "5s", "retries": 30, "start_period": "40s"}
@@ -381,7 +407,8 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 	if e := ensureDocker(); e != nil {
 		return e
 	}
-	path, e := c.bundle(h, s.Package)
+	c.reportInstall("download", "دریافت و بررسی بستهٔ مجاز…", 8)
+	path, e := c.bundle(h, s.Package, func(p int) { c.reportInstall("download", "دریافت بستهٔ نصب…", 8+p*21/100) })
 	if e != nil {
 		return e
 	}
@@ -399,15 +426,21 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 				return errors.New("existing customer database detected; use connect instead of a new source installation")
 			}
 		}
-		images, err := prepareSourceRuntime(path, stage, s.Package, SourceBuildOptions{LogPath: filepath.Join(c.Root, "agent/private", "build-"+s.Package.SHA[:24]+".log"), DockerConfigDir: filepath.Join(c.Root, "agent/private/docker")})
+		c.reportInstall("build", "ساخت و بررسی بستهٔ Office؛ ممکن است چند دقیقه زمان ببرد…", 30)
+		images, err := prepareSourceRuntime(path, stage, s.Package, SourceBuildOptions{LogPath: filepath.Join(c.Root, "agent/private", "build-"+s.Package.SHA[:24]+".log"), DockerConfigDir: filepath.Join(c.Root, "agent/private/docker"), Report: func(p int, step string) {
+			c.reportInstall("build", "ساخت و بررسی بستهٔ Office…\n"+errorSummary(cleanErrorText(step), 600), p)
+		}})
 		if err != nil {
 			return err
 		}
 		// Locally resolved image IDs are used only for Compose. The central
 		// receipt still confirms the original signed source ZIP and version.
 		s.Package.Manifest.Images = images
-	} else if e = extractBundle(path, stage, s.Package.Manifest); e != nil {
-		return e
+	} else {
+		c.reportInstall("build", "بررسی و آماده‌سازی ایمیج‌های نصب…", 30)
+		if e = extractBundle(path, stage, s.Package.Manifest); e != nil {
+			return e
+		}
 	}
 	for _, image := range s.Package.Manifest.Images {
 		if s.Package.Manifest.Format == "office-source-v1" {
@@ -451,6 +484,7 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 			}
 		}
 	}
+	c.reportInstall("configuration", "ثبت تنظیمات نصب…", 65)
 	if e = c.configure(&s, adopt); e != nil {
 		return e
 	}
@@ -468,34 +502,40 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 			return e
 		}
 	}
+	c.reportInstall("database", "راه‌اندازی دیتابیس و کش…", 70)
 	if e = c.compose("up", "-d", "--wait", "--wait-timeout", "300", "db", "redis"); e != nil {
 		return e
 	}
+	c.reportInstall("migration", "آماده‌سازی دیتابیس…", 75)
 	if e = c.compose("run", "--rm", "--no-deps", "migrate"); e != nil {
 		return e
 	}
 	credentials := filepath.Join(c.Root, "initial-admin.json")
+	c.reportInstall("administrator", "ایجاد حساب مدیر سامانه…", 80)
 	if raw, e := os.ReadFile(credentials); e == nil {
 		if e = c.composeInput(bytes.NewReader(raw), "run", "--rm", "--no-deps", "-T", "migrate", "php", "artisan", "office-agent:admin"); e != nil {
 			return e
 		}
 	}
+	c.reportInstall("services", "راه‌اندازی سرویس‌های Office…", 85)
 	if e = c.compose("up", "-d", "--remove-orphans", "--wait", "--wait-timeout", "300"); e != nil {
 		return e
 	}
+	c.reportInstall("health", "بررسی سلامت سامانه و نسخهٔ نصب‌شده…", 94)
 	if e = c.health(s.Package.Version); e != nil {
 		return e
 	}
-	if len(os.Args) > 1 && os.Args[1] != "daemon" {
+	if len(os.Args) > 1 && os.Args[1] != "daemon" && os.Args[1] != "wizard" {
 		if e = c.installService(false); e != nil {
 			return e
 		}
 	}
+	c.reportInstall("confirmation", "تأیید نصب موفق و ثبت لایسنس…", 98)
 	if e = c.confirmDeployment(s.Package, h); e != nil {
 		return e
 	}
 	fmt.Println("Office installed successfully:", s.Deployment.URL)
-	if raw, e := os.ReadFile(credentials); e == nil {
+	if raw, e := os.ReadFile(credentials); e == nil && c.InstallProgress == nil {
 		fmt.Println("Initial administrator credentials (keep private):", string(raw))
 		fmt.Println("Saved root-only:", credentials)
 	}

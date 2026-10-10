@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "1.4.0-rc.21"
+const version = "1.4.0-rc.22"
 const contextPrefix = "office-agent/v2\n"
 
 var b64 = base64.RawURLEncoding
@@ -103,9 +103,10 @@ type Identity struct {
 	ReactivationID string
 }
 type Client struct {
-	Root     string
-	Identity Identity
-	HTTP     *http.Client
+	Root            string
+	Identity        Identity
+	HTTP            *http.Client
+	InstallProgress func(stage, message string, progress int)
 	// Accessed only under the daemon's operation mutex.
 	CheckedUpdate      map[string]any
 	CheckedAt          time.Time

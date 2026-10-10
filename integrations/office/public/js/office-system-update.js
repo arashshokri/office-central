@@ -14,8 +14,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const error = byId('updateError'), progress = byId('checkProgress');
     let currentVersion = root.dataset.installedVersion, offer = null, confirmation = null;
     let running = false, checking = false, starting = false, cooling = false, reloadScheduled = false, pollTimer, progressTimer, cooldownTimer, percent = 0;
-    let jobId = null, installPercent = 0, pollFailures = 0;
+    let jobId = null, installPercent = 0, pollFailures = 0, lastJobStatus = null;
+    let modalHasProgress = false;
     const modal = new bootstrap.Modal(byId('officeUpdateConfirm'));
+    const modalState = (status = 'confirm') => {
+        const busy = status === 'running' || starting;
+        byId('officeUpdateConfirmTitle').textContent = busy ? 'بروزرسانی در حال انجام است' : status === 'success' ? 'بروزرسانی با موفقیت انجام شد' : status === 'error' ? 'بروزرسانی نیاز به ادامه دارد' : 'تأیید بروزرسانی سامانه';
+        byId('confirmInstall').hidden = busy || status === 'success';
+        byId('confirmInstall').textContent = status === 'error' ? 'تأیید و ادامهٔ بروزرسانی' : 'تأیید و بروزرسانی';
+        byId('cancelUpdate').textContent = status === 'confirm' ? 'انصراف' : 'بستن پنجره';
+        byId('confirmUpdateQuestion').hidden = status !== 'confirm';
+    };
     const buttons = () => {
         check.disabled = running || checking || starting || cooling;
         install.disabled = running || checking || starting || cooling || !offer?.version;
@@ -55,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
             throw e;
         } finally { clearTimeout(timeout); }
     };
-    const fail = e => { error.hidden = false; error.textContent = e.message; };
+    const fail = e => { error.hidden = false; error.textContent = e.message; byId('checkError').textContent = e.message; byId('checkError').hidden = modalHasProgress; };
     const setPercent = value => {
         percent = value;
         byId('checkPercent').textContent = value + '%';
@@ -101,12 +110,19 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const renderJob = job => {
         if (!job.status) return;
+        lastJobStatus = job.status;
         const wasRunning = running;
         if (job.id && job.id !== jobId) { jobId = job.id; installPercent = 0; }
         running = job.status === 'running';
         const milestones = { queued: 0, authorization: 3, download: 8, build: 30, backup: 65, migration: 75, services: 85, health: 94, confirmation: 98 };
         setInstallPercent(job.progress ?? milestones[job.stage] ?? 0, job.status);
         byId('updateProgress').hidden = false;
+        byId('showUpdateProgress').hidden = false;
+        byId('operationSummary').textContent = job.message || 'مشاهدهٔ وضعیت بروزرسانی';
+        byId('confirmCurrentVersion').textContent = 'v' + currentVersion;
+        byId('confirmNewVersion').textContent = 'v' + (job.version || offer?.version || '');
+        modalState(job.status);
+        if (running && !modalHasProgress) { modalHasProgress = true; modal.show(); }
         byId('updateMessage').textContent = job.message || (running ? 'بروزرسانی در حال انجام است…' : 'وضعیت بروزرسانی');
         const stages = { queued: 'آماده‌سازی', authorization: 'بررسی مجوز', download: 'دریافت بسته', build: 'ساخت و بررسی نسخه', backup: 'پشتیبان‌گیری', migration: 'اعمال تغییرات', services: 'راه‌اندازی', health: 'بررسی سلامت', confirmation: 'ثبت نتیجه', complete: 'تکمیل' };
         byId('updateStage').textContent = 'مرحله: ' + (stages[job.stage] || job.stage || '—') + (job.version ? ' • نسخهٔ ' + job.version : '');
@@ -116,9 +132,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (job.status === 'error' && job.version && (!offer || offer.version === job.version)) {
             renderOffer({ ...(offer?.version === job.version ? offer : {}), available: true, version: job.version, notes: 'عملیات قبلی کامل نشده است. پس از رفع خطای نمایش‌داده‌شده، برای ادامه تأیید کنید.' });
         }
+        if (job.status === 'error' && job.version) confirmation = { expected_version: offer?.version || job.version, expected_release_id: offer?.release_id || null };
         if (job.status === 'success') {
             renderOffer(null);
-            if (wasRunning && !reloadScheduled) { reloadScheduled = true; setTimeout(() => location.reload(), 2500); }
+            if (wasRunning && !reloadScheduled) { reloadScheduled = true; setTimeout(() => location.reload(), 5000); }
         }
         buttons();
         clearTimeout(pollTimer);
@@ -151,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     check.addEventListener('click', async () => {
         if (checking || running || starting || cooling) return;
-        checking = true; buttons(); error.hidden = true; progress.hidden = false;
+        checking = true; buttons(); error.hidden = true; byId('checkError').hidden = true; progress.hidden = false;
         byId('checkMessage').textContent = 'در حال بررسی نسخه‌های مجاز…';
         byId('checkProgressBar').classList.remove('bg-danger');
         renderOffer(null); setPercent(0);
@@ -190,17 +207,26 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmation = { expected_version: offer.version, expected_release_id: offer.release_id || null };
         byId('confirmCurrentVersion').textContent = 'v' + currentVersion;
         byId('confirmNewVersion').textContent = 'v' + offer.version;
+        modalHasProgress = false;
+        byId('updateProgress').hidden = true;
+        error.hidden = true;
+        modalState();
         modal.show();
     });
     byId('confirmInstall').addEventListener('click', async () => {
         if (!confirmation || starting || running || checking || cooling) return;
-        starting = true; buttons(); error.hidden = true; modal.hide();
+        starting = true; buttons(); error.hidden = true; modalHasProgress = true; modalState('running');
+        byId('showUpdateProgress').hidden = false;
         byId('updateProgress').hidden = false;
         byId('updateSpinner').hidden = false;
         byId('updateMessage').textContent = 'در حال تأیید نسخه و آغاز بروزرسانی…';
         byId('updateStage').textContent = 'نسخهٔ تأییدشده: ' + confirmation.expected_version;
         jobId = null; installPercent = 0; setInstallPercent(0);
-        try { renderJob(await api(root.dataset.installUrl, 'POST', confirmation)); }
+        try {
+            const job = await api(root.dataset.installUrl, 'POST', confirmation);
+            if (!['running', 'error', 'success'].includes(job.status)) throw new Error('وضعیت آغاز بروزرسانی قابل خواندن نیست؛ وضعیت عملیات دوباره بررسی می‌شود.');
+            renderJob(job);
+        }
         catch (e) {
             byId('updateSpinner').hidden = true; setInstallPercent(0, 'error');
             byId('updateMessage').textContent = 'پاسخ آغاز بروزرسانی دریافت نشد؛ وضعیت عملیات بررسی می‌شود.'; fail(e);
@@ -209,9 +235,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // never replay installation, backup or migrations automatically.
             pollTimer = setTimeout(() => poll(true), 2500);
         }
-        finally { starting = false; buttons(); }
+        finally { starting = false; modalState(running ? 'running' : lastJobStatus === 'success' ? 'success' : 'error'); buttons(); }
     });
-    byId('officeUpdateConfirm').addEventListener('hidden.bs.modal', () => { if (!starting) confirmation = null; });
+    byId('showUpdateProgress').addEventListener('click', () => { modalHasProgress = true; byId('updateProgress').hidden = false; modal.show(); });
+    byId('officeUpdateConfirm').addEventListener('hidden.bs.modal', () => { if (!starting && !modalHasProgress) confirmation = null; });
     renderOffer(initial.offer);
     renderJob(initial.job || {});
 });

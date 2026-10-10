@@ -196,10 +196,13 @@ func prepareSourceRuntime(path, stage string, p Package, options ...SourceBuildO
 		return nil, err
 	}
 	images := []Image{{Role: "app", Ref: app, ID: app}}
-	for _, item := range []struct{ role, ref string }{
+	for index, item := range []struct{ role, ref string }{
 		{"db", "mariadb:10.11.18"}, {"redis", "redis:7.4.5-alpine"},
 		{"rdp-web", "guacamole/guacamole:1.6.0"}, {"rdp-core", "guacamole/guacd:1.6.0"},
 	} {
+		if len(options) > 0 && options[0].Report != nil {
+			options[0].Report(60+index, "دریافت سرویس "+item.role)
+		}
 		if _, err = output("docker", "pull", "--platform", "linux/"+runtime.GOARCH, item.ref); err != nil {
 			return nil, fmt.Errorf("دریافت سرویس %s ناموفق بود؛ اتصال به مخزن Docker را بررسی کنید: %w", item.role, err)
 		}

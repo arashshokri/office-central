@@ -217,7 +217,7 @@ return [
     'install_office_for_customer' => 'Install Office on the customer server',
     'installer_server_prerequisites' => 'Run this command on the customer Linux server with Ubuntu/Debian, systemd and a valid hardware UUID. Verify installation on a test server first.',
     'installer_proxy_step' => 'Point the customer domain to their proxy. With the shared network configured in the license, NPM forwards to http://office-web:8080. Enable SSL and Force SSL.',
-    'installer_license_prompt' => 'Enter this license code only when the helper prompts. Initial administrator credentials are saved root-only at /opt/office/initial-admin.json.',
+    'installer_license_prompt' => 'The launcher prints a private HTTPS setup link. Open it, enter the license and complete administrator and connection settings in the browser. Installation shows progress from 0 to 100%. TCP port 8443 must be reachable; verify the SSH fingerprint for the generated local TLS certificate.',
     'installer_consumed_help' => 'This code has been consumed. Use office-agent resume for the same installation; hardware transfers require a new license for the same customer and product.',
     'upload_progress' => 'File upload progress',
     'upload_uploading' => 'Uploading file…',
