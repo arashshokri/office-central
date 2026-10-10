@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0-rc.23 — 2026-10-10
+
+- Simplify license details with a single full-code/copy bar, compact facts, update permission, access and status controls. Move technical identifiers, installation guidance and future feature planning into collapsible sections; remove repeated explanatory text.
+- Use scoped theme-aware styles, smaller fields and buttons, and responsive layouts. Preserve administrator-only controls, viewer masking, confirmations and existing licensing/update behavior.
+
 ## 1.4.0-rc.22 — 2026-10-10
 
 - Add a persistent HTTPS web installation wizard to the Office agent. Fresh setup prints a private, expiring URL; the browser verifies the one-use license, selects administrator credentials and connection settings, confirms installation and follows actual deployment progress.

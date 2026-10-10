@@ -257,4 +257,13 @@ return [
     'package_readiness_error' => 'علت آماده نبودن بسته',
     'choose_jalali_date' => 'انتخاب تاریخ شمسی', 'previous_month' => 'ماه قبل', 'next_month' => 'ماه بعد',
     'month' => 'ماه', 'year' => 'سال', 'today' => 'امروز', 'clear_expiry' => 'بدون انقضا', 'close' => 'بستن',
+    'license_technical_details' => 'اطلاعات فنی',
+    'license_installed_version_short' => 'نسخهٔ نصب‌شده',
+    'license_allowed_version_short' => 'نسخهٔ مجاز',
+    'license_select_update' => 'انتخاب نسخهٔ بروزرسانی',
+    'license_target_override_short' => 'ذخیرهٔ این نسخه، هدف اختصاصی نصب‌ها را جایگزین می‌کند.',
+    'license_access_control' => 'دسترسی سامانه',
+    'license_optional' => 'اختیاری',
+    'license_web_setup_short' => 'فرمان را روی سرور جدید اجرا کنید؛ لینک HTTPS نصب وب و تنظیم حساب مدیر نمایش داده می‌شود. پورت 8443 باید باز باشد؛ اثر انگشت گواهی موقت را با خروجی SSH تطبیق دهید.',
+    'license_features_short' => 'برای فاز ماژولار ذخیره شده است؛ فعلاً تغییری در قابلیت‌های Office ایجاد نمی‌کند.',
 ];

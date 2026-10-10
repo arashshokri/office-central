@@ -254,4 +254,13 @@ return [
     'package_readiness_error' => 'Package validation failed',
     'choose_jalali_date' => 'Select a Jalali date', 'previous_month' => 'Previous month', 'next_month' => 'Next month',
     'month' => 'Month', 'year' => 'Year', 'today' => 'Today', 'clear_expiry' => 'No expiry', 'close' => 'Close',
+    'license_technical_details' => 'Technical details',
+    'license_installed_version_short' => 'Installed version',
+    'license_allowed_version_short' => 'Allowed version',
+    'license_select_update' => 'Select update version',
+    'license_target_override_short' => 'Saving this version replaces installation-specific targets.',
+    'license_access_control' => 'Application access',
+    'license_optional' => 'Optional',
+    'license_web_setup_short' => 'Run the command on the new server to open HTTPS web setup and configure the administrator. Allow port 8443 and compare the temporary certificate fingerprint with the SSH output.',
+    'license_features_short' => 'Saved for the modular phase; it does not change current Office features.',
 ];
