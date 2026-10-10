@@ -338,7 +338,21 @@ func newInstallWizard(c *Client, config WizardConfig, h Hardware) *installWizard
 	w.poll = func() (State, error) { return c.poll(h) }
 	w.deploy = func(s State) error {
 		if s.Completed {
-			return c.health(s.Package.Version)
+			if err := c.health(s.Package.Version); err != nil {
+				return err
+			}
+			raw, err := os.ReadFile(c.wizardPath("update-receipt.json"))
+			if os.IsNotExist(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			var receipt updateReceipt
+			if json.Unmarshal(raw, &receipt) != nil || receipt.Installation != c.Identity.Installation || receipt.Package.Version != s.Package.Version {
+				return errors.New("saved installation receipt is invalid; customer data has been retained")
+			}
+			return c.confirmDeployment(receipt.Package, h)
 		}
 		return c.deploy(s, h, "")
 	}

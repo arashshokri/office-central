@@ -215,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     byId('confirmInstall').addEventListener('click', async () => {
         if (!confirmation || starting || running || checking || cooling) return;
-        starting = true; buttons(); error.hidden = true; modalHasProgress = true; modalState('running');
+        starting = true; lastJobStatus = null; buttons(); error.hidden = true; modalHasProgress = true; modalState('running');
         byId('showUpdateProgress').hidden = false;
         byId('updateProgress').hidden = false;
         byId('updateSpinner').hidden = false;

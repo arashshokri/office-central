@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -279,5 +281,57 @@ func TestWizardLostCompletionDoesNotInstallASeparatelyGrantedUpdate(t *testing.T
 	}
 	if done := waitWizard(t, w); done.Job.Status != "success" {
 		t.Fatal(done)
+	}
+}
+
+func TestWizardCompletedResumeConfirmsPendingReceiptWithoutReinstalling(t *testing.T) {
+	c, hardware, signingKey, state := fixtureState(t)
+	_, deviceKey, _ := ed25519.GenerateKey(rand.Reader)
+	c.Identity.Key = b64.EncodeToString(deviceKey)
+	state.ApplicationVersion = "3.8.31"
+	state.Package = Package{Version: "3.8.31", Release: "31", SHA: strings.Repeat("a", 64)}
+	receiptPath := c.wizardPath("update-receipt.json")
+	if err := atomicJSON(receiptPath, updateReceipt{c.Identity.Installation, hardware, state.Package}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(c.Root, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Only the installed version's health command is permitted during recovery.
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\ncase \"$*\" in\n*'exec -T app php artisan office-agent:health --expected-version=3.8.31') exit 0;;\n*) exit 1;;\nesac\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	var confirmations atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/api/v2/installer/complete" {
+			t.Error("unexpected installation request", req.URL.Path)
+			res.WriteHeader(500)
+			return
+		}
+		var input struct {
+			Version string `json:"application_version"`
+			Release string `json:"release_id"`
+			Health  bool   `json:"health_ok"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil || input.Version != "3.8.31" || input.Release != "31" || !input.Health {
+			t.Error("receipt changed during recovery", input, err)
+		}
+		confirmations.Add(1)
+		state.Package.Version = "3.8.32" // A later grant must not be installed.
+		_ = json.NewEncoder(res).Encode(map[string]any{"success": true, "data": map[string]any{"signed_state": envelope(signingKey, state)}})
+	}))
+	defer server.Close()
+	c.Identity.Endpoint, c.HTTP = server.URL, server.Client()
+	w := newInstallWizard(c, WizardConfig{}, hardware)
+	if err := w.deploy(state); err != nil {
+		t.Fatal(err)
+	}
+	if confirmations.Load() != 1 {
+		t.Fatal("completion receipt was not confirmed")
+	}
+	if _, err := os.Stat(receiptPath); !os.IsNotExist(err) {
+		t.Fatal("confirmed receipt retained", err)
 	}
 }

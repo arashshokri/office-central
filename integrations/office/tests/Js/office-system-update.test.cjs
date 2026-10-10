@@ -209,3 +209,13 @@ test('reloading an active operation restores its progress window without a secon
     assert.equal(page.calls.length, 0);
     assert.equal(page.element('showUpdateProgress').hidden, false);
 });
+
+test('a failed new start never inherits the success title of an older job', async () => {
+    const page = ui([reply(200, available), reply(429, {}, '10')], {job:{id:'old',status:'success',version:'3.8.24',progress:100}});
+    await page.click('checkUpdate');
+    page.click('installUpdate');
+    await page.click('confirmInstall');
+    assert.doesNotMatch(page.element('officeUpdateConfirmTitle').textContent, /با موفقیت/);
+    assert.match(page.element('officeUpdateConfirmTitle').textContent, /نیاز به ادامه/);
+    assert.equal(page.element('installPercent').textContent, '0%');
+});
