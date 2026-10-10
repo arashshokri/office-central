@@ -72,6 +72,7 @@ def build(args):
         # No unencoded app layer is an ancestor of the customer target.
         run('docker','run','--rm','--entrypoint','php',protected_image,'-r',
             "if(!extension_loaded('ionCube Loader') || !function_exists('sodium_crypto_sign_verify_detached')) exit(1); require '/app/vendor/autoload.php'; require '/app/bootstrap/app.php';")
+        validate_web_config(protected_image)
         export_bundle(args,protected_image,version,'ioncube',work,destination)
 
 def build_standard(args,office,version,destination):
@@ -81,8 +82,13 @@ def build_standard(args,office,version,destination):
     run('docker','build','--target','managed','--build-arg','APP_RELEASE_VERSION='+version,'-t',image,str(office))
     run('docker','run','--rm','--entrypoint','php',image,'-r',
         "if(!is_file('/app/office-managed') || !function_exists('sodium_crypto_sign_verify_detached')) exit(1); require '/app/vendor/autoload.php'; require '/app/bootstrap/app.php';")
+    validate_web_config(image)
     with tempfile.TemporaryDirectory(prefix='office-runtime-') as temp:
         export_bundle(args,image,version,'none',Path(temp),destination)
+
+def validate_web_config(image):
+    run('docker','run','--rm','--network','none','--entrypoint','frankenphp',image,
+        'validate','--config','/etc/caddy/Caddyfile','--adapter','caddyfile')
 
 def export_bundle(args,image,version,protection,work,destination):
     images={'app':image,'db':args.db,'redis':args.redis,'rdp-web':args.rdp_web,'rdp-core':args.rdp_core}

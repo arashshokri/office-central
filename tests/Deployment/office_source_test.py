@@ -113,6 +113,8 @@ class OfficeSourceTest(unittest.TestCase):
                 for image in manifest['images']:
                     self.assertEqual(image['sha256'],hashlib.sha256(bundle.read(image['archive'])).hexdigest())
             self.assertEqual(calls[0][1:5],('build','--target','managed','--build-arg'))
+            self.assertTrue(any(call[1:8]==('run','--rm','--network','none','--entrypoint','frankenphp','office-runtime:3.8.20')
+                                and 'validate' in call for call in calls))
 
 
 if __name__ == '__main__':

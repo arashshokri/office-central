@@ -199,6 +199,8 @@ case "$*" in
  *'office-helper-migrate') if [ "$FAIL_MIGRATION" = 1 ]; then echo 'SQLSTATE fixture migration failure' >&2; exit 1; fi;;
  'exec office-web php artisan office-agent:health --json') printf '{"status":"ok","version":"3.8.22"}';;
  'exec office-db sh -c '*) printf 'CREATE TABLE fixture(id INT);';;
+ 'run --rm --network none --entrypoint frankenphp '*)
+   if [ "$FAIL_WEB_CONFIG" = 1 ]; then echo 'open /etc/caddy/Caddyfile: permission denied'; exit 1; fi;;
  'run --rm --network none '*) printf 'storage backup fixture';;
 esac
 `
@@ -307,6 +309,21 @@ func TestFailedMigrationKeepsDataAndPublishesMaintenanceError(t *testing.T) {
 	}
 	_ = state
 	_ = h
+}
+
+func TestUnreadableRuntimeWebConfigFailsBeforeCustomerDataOrServicesChange(t *testing.T) {
+	c, state, h, job := existingUpdateFixture(t)
+	t.Setenv("FAIL_WEB_CONFIG", "1")
+	err := c.updateExisting(state, h, job, &ExistingOffice{Container: "office-web", Project: "leave-panel"})
+	if err == nil || !strings.Contains(err.Error(), "Caddyfile: permission denied") || job.Maintenance {
+		t.Fatal("runtime web configuration failure not contained", err, job)
+	}
+	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
+	for _, forbidden := range []string{"stop", "migrate", "mariadb-dump", "up -d", "down", "volume rm"} {
+		if strings.Contains(string(commands), forbidden) {
+			t.Fatal("invalid runtime web config changed live services", string(commands))
+		}
+	}
 }
 
 func TestPendingConfirmationDoesNotRepeatMigrationOrBackup(t *testing.T) {

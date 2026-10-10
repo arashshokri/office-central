@@ -3,7 +3,8 @@
 FROM production AS managed
 USER root
 LABEL ir.ponet.office.source-protection="none"
-RUN printf 'office-helper/v2\n' > /app/office-managed && chmod 0644 /app/office-managed
+RUN chmod 0644 /etc/caddy/Caddyfile /usr/local/etc/php/conf.d/zz-leave-panel.ini \
+    && printf 'office-helper/v2\n' > /app/office-managed && chmod 0644 /app/office-managed
 USER www-data
 # Keep ordinary source builds equivalent to the existing production target.
 FROM production AS default

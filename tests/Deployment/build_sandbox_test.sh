@@ -17,4 +17,4 @@ systemd-run --quiet --wait --pipe --collect \
     --setenv="OFFICE_BUILDX_SANDBOX_ROOT=$work" \
     --setenv=DOCKER_CONFIG=/root/.docker \
     --setenv=BUILDX_CONFIG=/root/.docker/buildx \
-    "$work/office-helper.test" -test.run='^TestBuildOfficeImageInServiceSandbox$' -test.v -test.timeout=3m
+    "$work/office-helper.test" -test.run='^Test(BuildOfficeImage|OfficeSourceWebRuntime)InServiceSandbox$' -test.v -test.timeout=6m

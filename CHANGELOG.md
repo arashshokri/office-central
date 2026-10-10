@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-rc.21 — 2026-10-10
+
+- Normalize extracted public source files to 0644 (0755 for executable scripts) and child directories to 0755 under the helper's UMask=0077. Keep the extraction root and all customer credentials private.
+- Validate the new image's Caddy configuration as its runtime user without customer network, environment or data mounts before backup, maintenance and migrations. Apply the same check in the owner package builder.
+- Publish Office v3.8.30 with explicit readable web/PHP configuration in production, managed and protected images. Document recovery of an existing unhealthy 3.8.29 container and continuation with the same signed release/license.
+- Reproduce the permission-denied image under the real systemd sandbox and verify the corrected FrankenPHP runtime serves HTTP as www-data. Cover restrictive-umask extraction and early rejection without live service or database changes.
+
 ## 1.4.0-rc.20 — 2026-10-10
 
 - Publish Office v3.8.29 with independent inbound-install and accepted-operation quotas. Failed or invalid starts do not spend the operation quota, duplicate job responses count once, and running jobs are returned without another Central check.

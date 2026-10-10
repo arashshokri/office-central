@@ -23,6 +23,7 @@ RUN mkdir -p /app/storage/app/private /app/storage/app/public /app/storage/app/b
     && ln -s ../storage/app/public /app/public/storage \
     && chown -R root:root /app/protected-views && chmod -R a-w /app/protected-views \
     && chown -R www-data:www-data /app/storage /app/bootstrap/cache /tmp/caddy \
+    && chmod 0644 /etc/caddy/Caddyfile /usr/local/etc/php/conf.d/zz-leave-panel.ini \
     && php -r 'if (!extension_loaded("ionCube Loader")) exit(1);' \
     && php artisan package:discover --ansi
 USER www-data

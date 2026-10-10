@@ -82,6 +82,9 @@ func extractOfficeSource(path, target string, m Manifest) error {
 		}
 		n, copyErr := io.Copy(out, io.LimitReader(stream, int64(f.UncompressedSize64)+1))
 		stream.Close()
+		// systemd runs the helper with UMask=0077. Explicitly normalize the
+		// public build inputs instead of inheriting 0600 into root-owned COPYs.
+		modeErr := out.Chmod(mode)
 		closeErr := out.Close()
 		if copyErr != nil {
 			return copyErr
@@ -89,9 +92,26 @@ func extractOfficeSource(path, target string, m Manifest) error {
 		if closeErr != nil {
 			return closeErr
 		}
+		if modeErr != nil {
+			return modeErr
+		}
 		if uint64(n) != f.UncompressedSize64 {
 			return errors.New("expanded source size mismatch")
 		}
+	}
+	// MkdirAll is also subject to umask. Keep the disposable extraction root
+	// private, while directories copied into the image must be traversable by
+	// its unprivileged runtime user. Archive paths cannot supply symlinks.
+	if err = filepath.WalkDir(target, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path != filepath.Clean(target) && entry.IsDir() {
+			return os.Chmod(path, 0755)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	for _, name := range []string{"artisan", "Dockerfile", "VERSION", "composer.json", "composer.lock", "bootstrap/providers.php", "docker/Caddyfile", "app/Providers/OfficeLicenseServiceProvider.php"} {
 		info, err := os.Stat(filepath.Join(target, name))
@@ -152,7 +172,19 @@ func buildSourceImage(path, stage string, p Package, options ...SourceBuildOptio
 	if _, err = output("docker", "run", "--rm", "--network", "none", "--entrypoint", "php", id, "-r", "if(!is_file('/app/office-managed') || !function_exists('sodium_crypto_sign_verify_detached')) exit(1); require '/app/vendor/autoload.php'; require '/app/bootstrap/app.php';"); err != nil {
 		return "", fmt.Errorf("built Office helper health check failed: %w", err)
 	}
+	if err = validateOfficeWebConfig(id); err != nil {
+		return "", err
+	}
 	return id, nil
+}
+
+// Validate as the image's runtime user, without customer environment, storage
+// or network access. Fail before maintenance, backup and database migrations.
+func validateOfficeWebConfig(image string) error {
+	if _, err := output("docker", "run", "--rm", "--network", "none", "--entrypoint", "frankenphp", image, "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"); err != nil {
+		return fmt.Errorf("بررسی تنظیمات وب‌سرور نسخهٔ جدید ناموفق بود؛ سامانهٔ فعلی تغییر نکرده است: %w", err)
+	}
+	return nil
 }
 
 // Fresh source installs use the same supported infrastructure versions as the

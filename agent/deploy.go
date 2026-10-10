@@ -423,6 +423,11 @@ func (c *Client) deploy(s State, h Hardware, adopt string) error {
 		if strings.TrimSpace(string(raw)) != image.ID {
 			return errors.New("loaded image ID differs from signed package")
 		}
+		if image.Role == "app" {
+			if e = validateOfficeWebConfig(image.ID); e != nil {
+				return e
+			}
+		}
 	}
 	existing := false
 	if _, err := output("docker", "volume", "inspect", "leave-panel_db_data"); err == nil {

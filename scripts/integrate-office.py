@@ -58,6 +58,11 @@ if 'forward_auth 127.0.0.1:8080' not in text:
         text=text.replace(old,new)
     caddy.write_text(text, encoding='utf-8', newline='\n')
 docker=office/'Dockerfile';text=docker.read_text(encoding='utf-8')
+config_copy='COPY docker/php.ini /usr/local/etc/php/conf.d/zz-leave-panel.ini\n'
+config_mode='RUN chmod 0644 /etc/caddy/Caddyfile /usr/local/etc/php/conf.d/zz-leave-panel.ini\n'
+if config_copy in text:
+    text=text.replace(config_copy,config_copy+config_mode) if config_copy+config_mode not in text else text
+    docker.write_text(text, encoding='utf-8', newline='\n')
 if '    sodium \\' not in text:
     text=text.replace('    pcntl \\\n', '    pcntl \\\n    sodium \\\n')
     docker.write_text(text, encoding='utf-8', newline='\n')

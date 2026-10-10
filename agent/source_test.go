@@ -28,7 +28,12 @@ func sourceZip(t *testing.T, entries map[string]string) string {
 		files[name] = body
 	}
 	for name, body := range files {
-		stream, err := z.Create(name)
+		header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+		header.SetMode(0644)
+		if strings.HasSuffix(name, ".sh") {
+			header.SetMode(0755)
+		}
+		stream, err := z.CreateHeader(header)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,6 +83,9 @@ case "$*" in
  'image inspect --format {{.Id}} office-source:'*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';;
  'run --rm --network none --entrypoint cat '*) printf '%s\n' "$*" >> "$FIXTURE_LOG"; printf '3.8.22';;
  'run --rm --network none --entrypoint php '*) printf '%s\n' "$*" >> "$FIXTURE_LOG";;
+ 'run --rm --network none --entrypoint frankenphp '*)
+   printf '%s\n' "$*" >> "$FIXTURE_LOG"
+   if [ "$FAIL_WEB_CONFIG" = 1 ]; then echo 'open /etc/caddy/Caddyfile: permission denied'; exit 1; fi;;
  *) exec "$(dirname "$0")/docker-runtime" "$@";;
 esac
 `
@@ -207,6 +215,21 @@ func TestFailedSourceBuildLeavesRunningOfficeAndDataUntouched(t *testing.T) {
 	for _, forbidden := range []string{"stop", "migrate", "mariadb-dump", "up -d", "down", "volume rm"} {
 		if strings.Contains(string(commands), forbidden) {
 			t.Fatal("build failure changed live services", string(commands))
+		}
+	}
+}
+
+func TestUnreadableSourceWebConfigFailsBeforeCustomerDataOrServicesChange(t *testing.T) {
+	c, state, h, job := sourceUpdateFixture(t)
+	t.Setenv("FAIL_WEB_CONFIG", "1")
+	err := c.updateExisting(state, h, job, &ExistingOffice{Container: "office-web", Project: "leave-panel"})
+	if err == nil || !strings.Contains(err.Error(), "Caddyfile: permission denied") || job.Maintenance {
+		t.Fatal("web startup configuration failure not contained", err, job)
+	}
+	commands, _ := os.ReadFile(filepath.Join(c.Root, "calls"))
+	for _, forbidden := range []string{"stop", "migrate", "mariadb-dump", "up -d", "down", "volume rm"} {
+		if strings.Contains(string(commands), forbidden) {
+			t.Fatal("invalid web config changed live services", string(commands))
 		}
 	}
 }

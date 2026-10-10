@@ -541,6 +541,11 @@ func (c *Client) updateExisting(state State, h Hardware, job *UpdateJob, profile
 	if image == "" {
 		return errors.New("application image is missing")
 	}
+	if state.Package.Manifest.Format != "office-source-v1" {
+		if err = validateOfficeWebConfig(image); err != nil {
+			return err
+		}
+	}
 	model, volume, err := c.existingModel(profile)
 	if err != nil {
 		return err
